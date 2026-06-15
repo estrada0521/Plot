@@ -1,0 +1,204 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/* Plot パネルは任意サイズ。左下固定でハンドル（上辺/右辺/右上角）で伸縮し、
+   ウィンドウがコンテンツに吸着する。 */
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--panel-init-width);
+  height: var(--panel-init-height);
+  min-width: var(--panel-min-width);
+  min-height: var(--panel-min-height);
+  overflow: hidden;
+  background: var(--color-bg);
+  border: 1px solid var(--color-window-border);
+  box-sizing: border-box;
+}
+
+/* リサイズハンドル（左下固定なので上辺=高さ / 右辺=幅 / 右上角=両方） */
+.grip {
+  position: absolute;
+  z-index: 5;
+}
+
+.grip-t {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: var(--grip-thickness);
+  cursor: ns-resize;
+}
+
+.grip-r {
+  top: 0;
+  right: 0;
+  width: var(--grip-thickness);
+  height: 100%;
+  cursor: ew-resize;
+}
+
+.grip-c {
+  top: 0;
+  right: 0;
+  width: var(--grip-corner);
+  height: var(--grip-corner);
+  cursor: nesw-resize;
+  z-index: 6;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  height: var(--titlebar-height);
+  padding: 0 var(--space-md);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.traffic {
+  display: flex;
+  gap: 8px;
+}
+
+.tl {
+  width: var(--traffic-size);
+  height: var(--traffic-size);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.tl-close {
+  background: #ff5f57;
+}
+
+.tl-min {
+  background: #febc2e;
+}
+
+.tl-max {
+  background: #28c840;
+}
+
+.title {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-base);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0;
+  width: max-content;
+  align-self: flex-start;
+  flex-shrink: 0;
+  height: var(--toolbar-height);
+  padding: 0 var(--space-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-window-border);
+  border-top: none;
+  overflow-x: auto;
+}
+
+.toolbar > *,
+.tools > * {
+  flex-shrink: 0;
+}
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--icon-btn-size);
+  height: var(--icon-btn-size);
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.icon-btn svg {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-btn.active {
+  color: var(--color-accent);
+}
+
+.sep {
+  width: 1px;
+  height: var(--sep-height);
+  background: var(--color-border);
+}
+
+.axis {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 var(--space-sm);
+  color: var(--color-text-muted);
+}
+
+.axis select {
+  max-width: var(--axis-select-max-width);
+  background: none;
+  color: var(--color-text);
+  border: none;
+  font-size: var(--font-size-base);
+  font-family: var(--font-family);
+}
+
+.status {
+  margin-left: var(--space-sm);
+  color: var(--color-text-muted);
+}
+
+.status:empty {
+  margin-left: 0;
+}
+
+.plot {
+  flex: 1;
+  min-height: 0;
+}
