@@ -171,7 +171,7 @@ body {
 .tools {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 2px;
 }
 
 .icon-btn {
@@ -183,14 +183,19 @@ body {
   padding: 0;
   background: none;
   border: none;
-  border-radius: 50%;
+  border-radius: 4px;
   color: var(--color-text);
   cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
-.icon-btn:hover,
+.icon-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
 .icon-btn.active {
-  background: var(--color-window-button-hover);
+  background: rgba(176, 32, 32, 0.14);
+  color: var(--color-highlight);
 }
 
 .icon-btn:disabled {
@@ -210,10 +215,6 @@ body {
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
-}
-
-.icon-btn.active {
-  color: var(--color-text);
 }
 
 .sep {

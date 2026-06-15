@@ -10,6 +10,7 @@
   --color-text-disabled: rgb(165, 165, 165);
   --color-accent: #0a84ff;
   --color-accent-text: #ffffff;
+  --color-highlight: rgb(176, 32, 32);
   --color-glass-surface: rgba(242, 242, 242, 0.84);
   --color-glass-highlight: rgba(255, 255, 255, 0.9);
   --color-glass-edge: rgba(255, 255, 255, 0.62);

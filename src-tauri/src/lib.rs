@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
-use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[derive(Serialize)]
 struct Dataset {
@@ -219,6 +219,28 @@ fn read_dataset(path: String) -> Result<Dataset, String> {
 }
 
 const MENU_NEW_WINDOW: &str = "new-window";
+const MENU_NEXT_WINDOW: &str = "next-window";
+const MENU_PREV_WINDOW: &str = "prev-window";
+
+/// 開いているウィンドウのフォーカスを順に切り替える（label 順で巡回）。
+fn cycle_windows(app: &AppHandle, forward: bool) {
+    let mut wins: Vec<_> = app.webview_windows().into_iter().collect();
+    if wins.len() < 2 {
+        return;
+    }
+    wins.sort_by(|a, b| a.0.cmp(&b.0));
+    let n = wins.len();
+    let cur = wins
+        .iter()
+        .position(|(_, w)| w.is_focused().unwrap_or(false))
+        .unwrap_or(0);
+    let idx = if forward {
+        (cur + 1) % n
+    } else {
+        (cur + n - 1) % n
+    };
+    let _ = wins[idx].1.set_focus();
+}
 
 fn create_plot_window(app: &AppHandle) -> tauri::Result<()> {
     let suffix = SystemTime::now()
@@ -227,15 +249,30 @@ fn create_plot_window(app: &AppHandle) -> tauri::Result<()> {
         .unwrap_or_default();
     let label = format!("plot-{suffix}");
 
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
+    // 現在フォーカス中のウィンドウから少し右下へずらして配置（カスケード）。
+    const OFFSET: f64 = 28.0;
+    let cascade = app
+        .webview_windows()
+        .values()
+        .find(|w| w.is_focused().unwrap_or(false))
+        .and_then(|w| {
+            let sf = w.scale_factor().ok()?;
+            let p = w.outer_position().ok()?.to_logical::<f64>(sf);
+            Some((p.x + OFFSET, p.y + OFFSET))
+        });
+
+    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
         .title("Raw-Plot")
         .inner_size(360.0, 320.0)
         .resizable(false)
         .decorations(false)
         .transparent(true)
         .shadow(false)
-        .focused(true)
-        .build()?;
+        .focused(true);
+    if let Some((x, y)) = cascade {
+        builder = builder.position(x, y);
+    }
+    builder.build()?;
 
     Ok(())
 }
@@ -321,8 +358,25 @@ pub fn run() {
             let file_menu = SubmenuBuilder::new(handle, "File")
                 .item(&new_window)
                 .build()?;
+            let next_window = MenuItem::with_id(
+                handle,
+                MENU_NEXT_WINDOW,
+                "Next Window",
+                true,
+                Some("CmdOrCtrl+`"),
+            )?;
+            let prev_window = MenuItem::with_id(
+                handle,
+                MENU_PREV_WINDOW,
+                "Previous Window",
+                true,
+                Some("CmdOrCtrl+Shift+`"),
+            )?;
             let window_menu = SubmenuBuilder::new(handle, "Window")
                 .minimize()
+                .separator()
+                .item(&next_window)
+                .item(&prev_window)
                 .build()?;
             let menu = MenuBuilder::new(handle)
                 .item(&app_menu)
@@ -332,12 +386,15 @@ pub fn run() {
             app.set_menu(menu)?;
             Ok(())
         })
-        .on_menu_event(|app, event| {
-            if event.id().as_ref() == MENU_NEW_WINDOW {
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            MENU_NEW_WINDOW => {
                 if let Err(err) = create_plot_window(app) {
                     eprintln!("failed to create plot window: {err}");
                 }
             }
+            MENU_NEXT_WINDOW => cycle_windows(app, true),
+            MENU_PREV_WINDOW => cycle_windows(app, false),
+            _ => {}
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
