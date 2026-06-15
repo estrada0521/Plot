@@ -20,7 +20,7 @@ body {
   gap: var(--panel-footer-gap);
 }
 
-/* Plot パネル。幅は ⌘N の新規ウィンドウ生成時だけフッター幅に合わせ、以後は独立。 */
+/* Plot パネル。開いた時は固定の既定サイズ（フッター幅に強制しない）。以後 grip で可変。 */
 .panel {
   position: relative;
   display: flex;
@@ -141,14 +141,13 @@ body {
   position: relative;
   display: flex;
   flex-wrap: nowrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 0;
-  width: max-content;
-  max-width: none;
+  width: fit-content;
   align-self: flex-start;
   flex-shrink: 0;
-  height: var(--toolbar-height);
-  padding: 0 4px;
+  min-height: var(--toolbar-height);
+  padding: 3px 4px;
   background:
     linear-gradient(180deg, var(--color-glass-highlight), rgba(255, 255, 255, 0) 44%),
     var(--color-glass-surface);
@@ -168,8 +167,10 @@ body {
   flex-shrink: 0;
 }
 
+/* 単純な1行ツールバー。内容ぴったり幅（folder/ナビ/モード + X/Y 選択）。 */
 .tools {
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 2px;
 }
@@ -225,6 +226,7 @@ body {
 
 .axis {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 2px;
   height: var(--icon-btn-size);
@@ -233,7 +235,8 @@ body {
 }
 
 .axis select {
-  max-width: none;
+  width: auto;
+  max-width: 190px;
   background: none;
   color: var(--color-text);
   border: none;

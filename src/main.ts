@@ -8,6 +8,7 @@ interface Dataset {
   name: string;
   columns: string[];
   rows: (number | null)[][];
+  display_name?: string;
   default_x?: string;
   default_y?: string;
 }
@@ -71,6 +72,14 @@ const resizeObserver = new ResizeObserver(() => {
   if (current) Plotly.Plots.resize(plotEl);
 });
 resizeObserver.observe(plotEl);
+
+// plot パネルの実寸を Rust に報告（タイル配置でフッターを重ねて詰めるのに使う）
+new ResizeObserver(() => {
+  invoke("report_panel_size", {
+    width: panelEl.offsetWidth,
+    height: panelEl.offsetHeight,
+  }).catch(() => {});
+}).observe(panelEl);
 
 // ウィンドウを「パネル∪フッター」の外接矩形に吸着させる。
 // macOS の setContentSize は左上を固定して伸縮するため、リサイズ中は下端（左下）が
@@ -171,7 +180,7 @@ async function loadDataset(path: string) {
   try {
     current = await invoke<Dataset>("read_dataset", { path });
     await invoke("mark_window_loaded");
-    titleEl.textContent = current.name;
+    titleEl.textContent = current.display_name ?? current.name;
     setupAxisSelectors(current);
     render();
   } catch (err) {

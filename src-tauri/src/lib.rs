@@ -4,6 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::{AppHandle, LogicalPosition, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
@@ -14,6 +15,18 @@ struct PendingFiles(Mutex<HashMap<String, String>>);
 /// データを読み込んだ（＝空でない）ウィンドウの label 集合。
 #[derive(Default)]
 struct LoadedWindows(Mutex<HashSet<String>>);
+
+/// 各ウィンドウの plot パネル実寸（論理px, label → (幅, 高さ)）。タイル配置で使用。
+#[derive(Default)]
+struct WindowMetrics(Mutex<HashMap<String, (f64, f64)>>);
+
+/// フロントが plot パネルのサイズを報告する（リサイズ毎）。
+#[tauri::command]
+fn report_panel_size(window: tauri::Window, width: f64, height: f64, metrics: State<WindowMetrics>) {
+    if let Ok(mut m) = metrics.0.lock() {
+        m.insert(window.label().to_string(), (width, height));
+    }
+}
 
 static WIN_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -44,11 +57,23 @@ fn close_empty_main_window(app: &AppHandle) {
     }
 }
 
+fn schedule_close_empty_main_window(app: &AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        for delay in [100_u64, 400, 900] {
+            std::thread::sleep(Duration::from_millis(delay));
+            close_empty_main_window(&app);
+        }
+    });
+}
+
 #[derive(Serialize)]
 struct Dataset {
     name: String,
     columns: Vec<String>,
     rows: Vec<Vec<f64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     default_x: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,18 +91,23 @@ fn cell(t: &str) -> f64 {
 }
 
 /// 同フォルダの metadata.json から default_x / default_y を読む（無ければ None）。
-fn read_meta_defaults(path: &str) -> (Option<String>, Option<String>) {
+fn read_meta_defaults(path: &str) -> (Option<String>, Option<String>, Option<String>) {
     let Some(dir) = Path::new(path).parent() else {
-        return (None, None);
+        return (None, None, None);
     };
     let Ok(txt) = fs::read_to_string(dir.join("metadata.json")) else {
-        return (None, None);
+        return (None, None, None);
     };
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) else {
-        return (None, None);
+        return (None, None, None);
     };
-    let get = |k: &str| v.get(k).and_then(|x| x.as_str()).map(|s| s.to_string());
-    (get("default_x"), get("default_y"))
+    let get = |k: &str| {
+        v.get(k)
+            .and_then(|x| x.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    };
+    (get("default_x"), get("default_y"), get("display_name"))
 }
 
 /// 列・行を Dataset にまとめ、metadata の既定軸が実在する場合のみ採用する。
@@ -88,7 +118,7 @@ fn finalize(name: String, columns: Vec<String>, rows: Vec<Vec<f64>>, path: &str)
     if rows.is_empty() {
         return Err("数値データが見つかりません".into());
     }
-    let (dx, dy) = read_meta_defaults(path);
+    let (dx, dy, display_name) = read_meta_defaults(path);
     let exists = |c: &Option<String>| c.as_ref().is_some_and(|n| columns.iter().any(|col| col == n));
     let default_x = if exists(&dx) { dx } else { None };
     let default_y = if exists(&dy) { dy } else { None };
@@ -96,6 +126,7 @@ fn finalize(name: String, columns: Vec<String>, rows: Vec<Vec<f64>>, path: &str)
         name,
         columns,
         rows,
+        display_name,
         default_x,
         default_y,
     })
@@ -284,27 +315,35 @@ fn arrange_windows(app: &AppHandle) {
         })
         .unwrap_or((0.0, 0.0, 1440.0));
 
+    let metrics = app.state::<WindowMetrics>();
     let gap = 12.0;
     let margin_top = 28.0; // メニューバー分
     let mut x = area_x + gap;
     let mut y = area_y + margin_top;
-    let mut row_h: f64 = 0.0;
-    for (_, w) in &wins {
+    let mut row_h: f64 = 0.0; // 行内パネル高さの最大
+    for (label, w) in &wins {
         let s = w.scale_factor().unwrap_or(1.0);
-        let size = w
+        let outer = w
             .outer_size()
             .map(|sz| sz.to_logical::<f64>(s))
             .unwrap_or_else(|_| tauri::LogicalSize::new(360.0, 320.0));
+        // plot パネル実寸（無ければウィンドウ実寸で代用）。パネル幅で詰めるとフッターは重なる。
+        let (pw, ph) = metrics
+            .0
+            .lock()
+            .ok()
+            .and_then(|m| m.get(label.as_str()).copied())
+            .unwrap_or((outer.width, outer.height));
         // 行末で折り返し
-        if x > area_x + gap && x + size.width > area_x + area_w - gap {
+        if x > area_x + gap && x + pw > area_x + area_w - gap {
             x = area_x + gap;
             y += row_h + gap;
             row_h = 0.0;
         }
         let _ = w.set_position(LogicalPosition::new(x, y));
-        x += size.width + gap;
-        if size.height > row_h {
-            row_h = size.height;
+        x += pw + gap;
+        if ph > row_h {
+            row_h = ph;
         }
     }
 }
@@ -436,10 +475,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(PendingFiles::default())
         .manage(LoadedWindows::default())
+        .manage(WindowMetrics::default())
         .invoke_handler(tauri::generate_handler![
             read_dataset,
             take_pending_file,
-            mark_window_loaded
+            mark_window_loaded,
+            report_panel_size
         ])
         .setup(|app| {
             let handle = app.handle();
@@ -528,6 +569,7 @@ pub fn run() {
                 }
                 if opened_any {
                     close_empty_main_window(app);
+                    schedule_close_empty_main_window(app);
                 }
             }
         });

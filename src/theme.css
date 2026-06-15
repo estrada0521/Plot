@@ -11,7 +11,7 @@
   --color-accent: #0a84ff;
   --color-accent-text: #ffffff;
   --color-highlight: rgb(176, 32, 32);
-  --color-glass-surface: rgba(242, 242, 242, 0.84);
+  --color-glass-surface: rgba(251, 251, 251, 0.92);
   --color-glass-highlight: rgba(255, 255, 255, 0.9);
   --color-glass-edge: rgba(255, 255, 255, 0.62);
   --color-glass-shadow: rgba(0, 0, 0, 0.11);
@@ -35,6 +35,7 @@
   --panel-header-gap: 0px;
   --panel-footer-gap: 6px;
   --toolbar-height: 32px;
+  --toolbar-max-width: 460px;
   --titlebar-height: 24px;
   --window-btn-size: 22px;
   --window-icon-size: 15px;
@@ -43,8 +44,8 @@
   --panel-init-height: 280px;
   --panel-min-width: 36px;
   --panel-min-height: 30px;
-  --grip-thickness: 6px;
-  --grip-corner: 14px;
+  --grip-thickness: 10px;
+  --grip-corner: 16px;
   --radius: 6px;
   --icon-btn-size: 26px;
   --icon-size: 16px;
