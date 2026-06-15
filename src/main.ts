@@ -64,6 +64,7 @@ let plotMode: "lines" | "markers" = "lines";
 
 const panelEl = document.getElementById("panel") as HTMLDivElement;
 const footerEl = document.querySelector(".toolbar") as HTMLElement;
+let panelWidthAdjustedByUser = false;
 
 // パネルのサイズ変化に追従して Plotly を再描画
 const resizeObserver = new ResizeObserver(() => {
@@ -85,8 +86,9 @@ async function applyFit() {
     return;
   }
   fitRunning = true;
+  const footerGap = parseFloat(themeVar("--panel-footer-gap")) || 0;
   const w = Math.ceil(Math.max(panelEl.offsetWidth, footerEl.offsetWidth));
-  const h = Math.ceil(panelEl.offsetHeight + footerEl.offsetHeight);
+  const h = Math.ceil(panelEl.offsetHeight + footerEl.offsetHeight + footerGap);
   await appWindow.setSize(new LogicalSize(w, h));
   if (resizeMode) {
     const topPhys = Math.round(anchorBottomPhys - h * scale);
@@ -101,8 +103,18 @@ async function applyFit() {
 function fitWindow() {
   applyFit();
 }
-// フッター幅が変わった時（X/Y選択の出現など）や初期化時に吸着
+function syncPanelWidthToFooter() {
+  if (panelWidthAdjustedByUser) return;
+  const footerWidth = Math.ceil(footerEl.getBoundingClientRect().width);
+  if (footerWidth > 0) panelEl.style.width = `${footerWidth}px`;
+}
+// フッター幅が変わった時（X/Y選択の出現など）はウィンドウだけ吸着させる。
+// panel 幅は起動直後だけ footer 初期幅へ合わせ、データ読み込み後の plot 幅は変えない。
 new ResizeObserver(() => fitWindow()).observe(footerEl);
+requestAnimationFrame(() => {
+  syncPanelWidthToFooter();
+  fitWindow();
+});
 
 // 左下固定の前提で、上辺=高さ / 右辺=幅 / 右上角=両方 を伸縮。
 // 計算は screen 座標で行い、ウィンドウ移動による座標ブレを排除する。
@@ -134,6 +146,7 @@ function onResizeUp() {
 document.querySelectorAll<HTMLElement>(".grip").forEach((grip) => {
   grip.addEventListener("pointerdown", (e) => {
     resizeMode = grip.dataset.resize as "t" | "r" | "c";
+    if (resizeMode === "r" || resizeMode === "c") panelWidthAdjustedByUser = true;
     startScreenX = e.screenX;
     startScreenY = e.screenY;
     const r = panelEl.getBoundingClientRect();
@@ -187,6 +200,7 @@ function setupAxisSelectors(ds: Dataset) {
   fill(xSelect, 0);
   fill(ySelect, ds.columns.length > 1 ? 1 : 0);
   toolsEl.hidden = false;
+  requestAnimationFrame(() => fitWindow());
 }
 
 xSelect.addEventListener("change", render);

@@ -25,14 +25,15 @@
   /* 余白・寸法 */
   --space-sm: 6px;
   --space-md: 12px;
+  --panel-footer-gap: 6px;
   --toolbar-height: 32px;
   --titlebar-height: 30px;
   --window-btn-size: 22px;
   --window-icon-size: 15px;
   --color-window-button-hover: rgb(212, 212, 212);
   --panel-init-width: 720px;
-  --panel-init-height: 460px;
-  --panel-min-width: 80px;
+  --panel-init-height: 280px;
+  --panel-min-width: 36px;
   --panel-min-height: 30px;
   --grip-thickness: 6px;
   --grip-corner: 14px;
