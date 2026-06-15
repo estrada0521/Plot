@@ -1,9 +1,48 @@
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, LogicalPosition, Manager, State, WebviewUrl, WebviewWindowBuilder};
+
+/// 新規ウィンドウへ「起動時に開くファイル」を引き渡すための保管庫（label → path）。
+#[derive(Default)]
+struct PendingFiles(Mutex<HashMap<String, String>>);
+
+/// データを読み込んだ（＝空でない）ウィンドウの label 集合。
+#[derive(Default)]
+struct LoadedWindows(Mutex<HashSet<String>>);
+
+static WIN_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// フロントが起動直後に呼び、自ウィンドウに割り当てられたファイルパスを受け取る。
+#[tauri::command]
+fn take_pending_file(window: tauri::Window, pending: State<PendingFiles>) -> Option<String> {
+    pending.0.lock().ok()?.remove(window.label())
+}
+
+/// フロントがデータ読み込み成功時に呼び、自ウィンドウを「空でない」と記録する。
+#[tauri::command]
+fn mark_window_loaded(window: tauri::Window, loaded: State<LoadedWindows>) {
+    if let Ok(mut s) = loaded.0.lock() {
+        s.insert(window.label().to_string());
+    }
+}
+
+fn close_empty_main_window(app: &AppHandle) {
+    let Some(main) = app.get_webview_window("main") else {
+        return;
+    };
+    let loaded = app
+        .try_state::<LoadedWindows>()
+        .and_then(|state| state.0.lock().ok().map(|s| s.contains("main")))
+        .unwrap_or(false);
+    if !loaded {
+        let _ = main.close();
+    }
+}
 
 #[derive(Serialize)]
 struct Dataset {
@@ -221,6 +260,54 @@ fn read_dataset(path: String) -> Result<Dataset, String> {
 const MENU_NEW_WINDOW: &str = "new-window";
 const MENU_NEXT_WINDOW: &str = "next-window";
 const MENU_PREV_WINDOW: &str = "prev-window";
+const MENU_ARRANGE: &str = "arrange-windows";
+
+/// 開いているウィンドウを画面左上から行詰めでタイル配置する。
+fn arrange_windows(app: &AppHandle) {
+    let mut wins: Vec<_> = app.webview_windows().into_iter().collect();
+    if wins.is_empty() {
+        return;
+    }
+    wins.sort_by(|a, b| a.0.cmp(&b.0));
+
+    // 配置領域（プライマリモニタ）。取得できなければ既定値。
+    let (area_x, area_y, area_w) = wins[0]
+        .1
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| {
+            let s = m.scale_factor();
+            let p = m.position().to_logical::<f64>(s);
+            let sz = m.size().to_logical::<f64>(s);
+            (p.x, p.y, sz.width)
+        })
+        .unwrap_or((0.0, 0.0, 1440.0));
+
+    let gap = 12.0;
+    let margin_top = 28.0; // メニューバー分
+    let mut x = area_x + gap;
+    let mut y = area_y + margin_top;
+    let mut row_h: f64 = 0.0;
+    for (_, w) in &wins {
+        let s = w.scale_factor().unwrap_or(1.0);
+        let size = w
+            .outer_size()
+            .map(|sz| sz.to_logical::<f64>(s))
+            .unwrap_or_else(|_| tauri::LogicalSize::new(360.0, 320.0));
+        // 行末で折り返し
+        if x > area_x + gap && x + size.width > area_x + area_w - gap {
+            x = area_x + gap;
+            y += row_h + gap;
+            row_h = 0.0;
+        }
+        let _ = w.set_position(LogicalPosition::new(x, y));
+        x += size.width + gap;
+        if size.height > row_h {
+            row_h = size.height;
+        }
+    }
+}
 
 /// 開いているウィンドウのフォーカスを順に切り替える（label 順で巡回）。
 fn cycle_windows(app: &AppHandle, forward: bool) {
@@ -242,12 +329,18 @@ fn cycle_windows(app: &AppHandle, forward: bool) {
     let _ = wins[idx].1.set_focus();
 }
 
-fn create_plot_window(app: &AppHandle) -> tauri::Result<()> {
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or_default();
-    let label = format!("plot-{suffix}");
+/// 新規ウィンドウを生成する。pending_path があればそのファイルを開くよう保管する。
+fn spawn_window(app: &AppHandle, pending_path: Option<&str>) -> tauri::Result<()> {
+    let n = WIN_SEQ.fetch_add(1, Ordering::Relaxed);
+    let label = format!("plot-{n}");
+
+    if let Some(p) = pending_path {
+        if let Some(state) = app.try_state::<PendingFiles>() {
+            if let Ok(mut m) = state.0.lock() {
+                m.insert(label.clone(), p.to_string());
+            }
+        }
+    }
 
     // 現在フォーカス中のウィンドウから少し右下へずらして配置（カスケード）。
     const OFFSET: f64 = 28.0;
@@ -261,7 +354,7 @@ fn create_plot_window(app: &AppHandle) -> tauri::Result<()> {
             Some((p.x + OFFSET, p.y + OFFSET))
         });
 
-    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
+    let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title("Raw-Plot")
         .inner_size(360.0, 320.0)
         .resizable(false)
@@ -275,6 +368,10 @@ fn create_plot_window(app: &AppHandle) -> tauri::Result<()> {
     builder.build()?;
 
     Ok(())
+}
+
+fn create_plot_window(app: &AppHandle) -> tauri::Result<()> {
+    spawn_window(app, None)
 }
 
 #[cfg(test)]
@@ -337,7 +434,13 @@ mod tests {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![read_dataset])
+        .manage(PendingFiles::default())
+        .manage(LoadedWindows::default())
+        .invoke_handler(tauri::generate_handler![
+            read_dataset,
+            take_pending_file,
+            mark_window_loaded
+        ])
         .setup(|app| {
             let handle = app.handle();
             let new_window = MenuItem::with_id(
@@ -372,11 +475,19 @@ pub fn run() {
                 true,
                 Some("CmdOrCtrl+Shift+`"),
             )?;
+            let arrange = MenuItem::with_id(
+                handle,
+                MENU_ARRANGE,
+                "Arrange Windows",
+                true,
+                Some("CmdOrCtrl+Alt+A"),
+            )?;
             let window_menu = SubmenuBuilder::new(handle, "Window")
                 .minimize()
                 .separator()
                 .item(&next_window)
                 .item(&prev_window)
+                .item(&arrange)
                 .build()?;
             let menu = MenuBuilder::new(handle)
                 .item(&app_menu)
@@ -394,8 +505,30 @@ pub fn run() {
             }
             MENU_NEXT_WINDOW => cycle_windows(app, true),
             MENU_PREV_WINDOW => cycle_windows(app, false),
+            MENU_ARRANGE => arrange_windows(app),
             _ => {}
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Finder で「このアプリで開く」/関連付けで開かれたファイルを受け取り、
+            // 各ファイルを新規ウィンドウに展開する。
+            if let tauri::RunEvent::Opened { urls } = event {
+                let mut opened_any = false;
+                for url in urls {
+                    if let Ok(path) = url.to_file_path() {
+                        if let Some(p) = path.to_str() {
+                            if let Err(err) = spawn_window(app, Some(p)) {
+                                eprintln!("failed to open file window: {err}");
+                            } else {
+                                opened_any = true;
+                            }
+                        }
+                    }
+                }
+                if opened_any {
+                    close_empty_main_window(app);
+                }
+            }
+        });
 }

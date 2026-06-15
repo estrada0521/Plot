@@ -166,22 +166,30 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-openBtn.addEventListener("click", async () => {
-  const selected = await open({
-    multiple: false,
-    filters: [{ name: "Data", extensions: ["csv", "dat", "txt", "ras"] }],
-  });
-  if (typeof selected !== "string") return;
-
+async function loadDataset(path: string) {
   statusEl.textContent = "";
   try {
-    current = await invoke<Dataset>("read_dataset", { path: selected });
+    current = await invoke<Dataset>("read_dataset", { path });
+    await invoke("mark_window_loaded");
     titleEl.textContent = current.name;
     setupAxisSelectors(current);
     render();
   } catch (err) {
     statusEl.textContent = `エラー: ${err}`;
   }
+}
+
+openBtn.addEventListener("click", async () => {
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: "Data", extensions: ["csv", "dat", "txt", "ras"] }],
+  });
+  if (typeof selected === "string") loadDataset(selected);
+});
+
+// Finder で開かれたファイル（関連付け）がこのウィンドウに割り当てられていれば自動ロード
+invoke<string | null>("take_pending_file").then((path) => {
+  if (path) loadDataset(path);
 });
 
 function setupAxisSelectors(ds: Dataset) {
