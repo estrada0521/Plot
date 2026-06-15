@@ -194,8 +194,8 @@ body {
 }
 
 .icon-btn.active {
-  background: rgba(176, 32, 32, 0.14);
-  color: var(--color-highlight);
+  background: rgba(0, 0, 0, 0.15);
+  color: var(--color-text);
 }
 
 .icon-btn:disabled {
