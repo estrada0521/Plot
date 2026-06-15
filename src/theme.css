@@ -5,6 +5,7 @@
   --color-border: rgb(188, 188, 188);
   --color-text: rgb(11, 11, 11);
   --color-text-muted: rgb(110, 110, 108);
+  --color-text-disabled: rgb(165, 165, 165);
   --color-accent: #0a84ff;
   --color-accent-text: #ffffff;
 
@@ -29,7 +30,6 @@
   --window-btn-size: 22px;
   --window-icon-size: 15px;
   --color-window-button-hover: rgb(212, 212, 212);
-  --axis-select-max-width: 130px;
   --panel-init-width: 720px;
   --panel-init-height: 460px;
   --panel-min-width: 80px;

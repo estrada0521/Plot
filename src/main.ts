@@ -17,9 +17,10 @@ const statusEl = document.getElementById("status") as HTMLSpanElement;
 const plotEl = document.getElementById("plot") as HTMLDivElement;
 const toolsEl = document.getElementById("tools") as HTMLDivElement;
 const homeBtn = document.getElementById("home-btn") as HTMLButtonElement;
+const undoBtn = document.getElementById("undo-btn") as HTMLButtonElement;
+const redoBtn = document.getElementById("redo-btn") as HTMLButtonElement;
 const panBtn = document.getElementById("pan-btn") as HTMLButtonElement;
 const zoomBtn = document.getElementById("zoom-btn") as HTMLButtonElement;
-const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
 const lineBtn = document.getElementById("line-btn") as HTMLButtonElement;
 const scatterBtn = document.getElementById("scatter-btn") as HTMLButtonElement;
 const titleEl = document.getElementById("title") as HTMLSpanElement;
@@ -202,25 +203,211 @@ function setDragmode(mode: "zoom" | "pan") {
 homeBtn.addEventListener("click", () => {
   if (current) Plotly.relayout(plotEl, { "xaxis.autorange": true, "yaxis.autorange": true });
 });
+
+interface PlotElementWithHistory extends HTMLDivElement {
+  on?: (event: string, callback: (eventData?: Record<string, unknown>) => void) => void;
+  _fullLayout?: {
+    xaxis?: PlotAxisLayout;
+    yaxis?: PlotAxisLayout;
+  };
+}
+
+interface PlotAxisLayout {
+  range?: [number, number];
+  autorange?: boolean;
+  _offset?: number;
+  _length?: number;
+}
+
+interface PlotViewState {
+  xRange: [number, number] | null;
+  yRange: [number, number] | null;
+}
+
+let viewHistory: PlotViewState[] = [];
+let viewHistoryIndex = -1;
+let suppressHistory = false;
+let wheelHistoryTimer: number | null = null;
+
+function readAxisRange(axis?: PlotAxisLayout) {
+  if (!axis || axis.autorange || !Array.isArray(axis.range)) return null;
+  return [Number(axis.range[0]), Number(axis.range[1])] as [number, number];
+}
+
+function readAxisNumericRange(axis?: PlotAxisLayout): [number, number] | null {
+  if (!axis || !Array.isArray(axis.range)) return null;
+  const start = Number(axis.range[0]);
+  const end = Number(axis.range[1]);
+  return Number.isFinite(start) && Number.isFinite(end) ? [start, end] : null;
+}
+
+function readViewState(): PlotViewState | null {
+  const gd = plotEl as PlotElementWithHistory;
+  if (!gd._fullLayout) return null;
+  return {
+    xRange: readAxisRange(gd._fullLayout.xaxis),
+    yRange: readAxisRange(gd._fullLayout.yaxis),
+  };
+}
+
+function sameRange(a: [number, number] | null, b: [number, number] | null) {
+  if (!a || !b) return a === b;
+  return Math.abs(a[0] - b[0]) < 1e-12 && Math.abs(a[1] - b[1]) < 1e-12;
+}
+
+function sameViewState(a: PlotViewState, b: PlotViewState) {
+  return sameRange(a.xRange, b.xRange) && sameRange(a.yRange, b.yRange);
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function resetViewHistory() {
+  const state = readViewState();
+  viewHistory = state ? [state] : [];
+  viewHistoryIndex = state ? 0 : -1;
+  updateHistoryButtons();
+}
+
+function pushViewHistory() {
+  const state = readViewState();
+  if (!state) return;
+  const previous = viewHistory[viewHistoryIndex];
+  if (previous && sameViewState(previous, state)) return;
+  viewHistory = viewHistory.slice(0, viewHistoryIndex + 1);
+  viewHistory.push(state);
+  viewHistoryIndex = viewHistory.length - 1;
+  updateHistoryButtons();
+}
+
+function relayoutForViewState(state: PlotViewState) {
+  return {
+    ...(state.xRange
+      ? { "xaxis.autorange": false, "xaxis.range": state.xRange }
+      : { "xaxis.autorange": true }),
+    ...(state.yRange
+      ? { "yaxis.autorange": false, "yaxis.range": state.yRange }
+      : { "yaxis.autorange": true }),
+  };
+}
+
+async function runPlotHistory(direction: "undo" | "redo") {
+  if (!current) return;
+  const nextIndex = direction === "undo" ? viewHistoryIndex - 1 : viewHistoryIndex + 1;
+  const state = viewHistory[nextIndex];
+  if (!state) return;
+  viewHistoryIndex = nextIndex;
+  updateHistoryButtons();
+  suppressHistory = true;
+  try {
+    await Plotly.relayout(plotEl, relayoutForViewState(state));
+  } finally {
+    suppressHistory = false;
+  }
+}
+
+function updateHistoryButtons() {
+  undoBtn.disabled = !current || viewHistoryIndex <= 0;
+  redoBtn.disabled = !current || viewHistoryIndex < 0 || viewHistoryIndex >= viewHistory.length - 1;
+}
+
+function isRangeRelayout(eventData?: Record<string, unknown>) {
+  if (!eventData) return false;
+  return Object.keys(eventData).some((key) =>
+    /^(xaxis|yaxis)\.(range|range\[\d+\]|autorange)$/.test(key),
+  );
+}
+
+let plotEventsAttached = false;
+function attachPlotEvents() {
+  const gd = plotEl as PlotElementWithHistory;
+  if (plotEventsAttached || !gd.on) return;
+  gd.on("plotly_relayout", (eventData) => {
+    if (!suppressHistory && isRangeRelayout(eventData)) pushViewHistory();
+    updateHistoryButtons();
+  });
+  plotEventsAttached = true;
+}
+
+undoBtn.addEventListener("click", () => runPlotHistory("undo"));
+redoBtn.addEventListener("click", () => runPlotHistory("redo"));
+
+function handleNavigationMouseButton(event: MouseEvent) {
+  if (event.button === 3) {
+    event.preventDefault();
+    event.stopPropagation();
+    runPlotHistory("undo");
+  } else if (event.button === 4) {
+    event.preventDefault();
+    event.stopPropagation();
+    runPlotHistory("redo");
+  }
+}
+
+window.addEventListener("mousedown", handleNavigationMouseButton, { capture: true });
+window.addEventListener("mouseup", handleNavigationMouseButton, { capture: true });
+window.addEventListener("auxclick", handleNavigationMouseButton, { capture: true });
+
+plotEl.addEventListener("wheel", (event) => {
+  if (!current) return;
+  const gd = plotEl as PlotElementWithHistory;
+  const xaxis = gd._fullLayout?.xaxis;
+  const yaxis = gd._fullLayout?.yaxis;
+  const xRange = readAxisNumericRange(xaxis);
+  const yRange = readAxisNumericRange(yaxis);
+  if (!xRange || !yRange) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  const rect = plotEl.getBoundingClientRect();
+  const xOffset = xaxis?._offset ?? 0;
+  const yOffset = yaxis?._offset ?? 0;
+  const xLength = xaxis?._length ?? rect.width;
+  const yLength = yaxis?._length ?? rect.height;
+  const xFraction = clamp((event.clientX - rect.left - xOffset) / xLength, 0, 1);
+  const yFraction = 1 - clamp((event.clientY - rect.top - yOffset) / yLength, 0, 1);
+  const anchorX = xRange[0] + (xRange[1] - xRange[0]) * xFraction;
+  const anchorY = yRange[0] + (yRange[1] - yRange[0]) * yFraction;
+  const factor = event.deltaY < 0 ? 0.82 : 1.22;
+
+  suppressHistory = true;
+  Plotly.relayout(plotEl, {
+    "xaxis.autorange": false,
+    "xaxis.range": [
+      anchorX - (anchorX - xRange[0]) * factor,
+      anchorX + (xRange[1] - anchorX) * factor,
+    ],
+    "yaxis.autorange": false,
+    "yaxis.range": [
+      anchorY - (anchorY - yRange[0]) * factor,
+      anchorY + (yRange[1] - anchorY) * factor,
+    ],
+  }).finally(() => {
+    suppressHistory = false;
+  });
+
+  if (wheelHistoryTimer !== null) window.clearTimeout(wheelHistoryTimer);
+  wheelHistoryTimer = window.setTimeout(() => {
+    wheelHistoryTimer = null;
+    pushViewHistory();
+  }, 250);
+}, { passive: false, capture: true });
+
 panBtn.addEventListener("click", () => setDragmode("pan"));
 zoomBtn.addEventListener("click", () => setDragmode("zoom"));
 
 function setPlotMode(mode: "lines" | "markers") {
   plotMode = mode;
-  if (current) render();
+  if (current) {
+    Plotly.restyle(plotEl, { mode }, [0]);
+    lineBtn.classList.toggle("active", plotMode === "lines");
+    scatterBtn.classList.toggle("active", plotMode === "markers");
+  }
 }
 lineBtn.addEventListener("click", () => setPlotMode("lines"));
 scatterBtn.addEventListener("click", () => setPlotMode("markers"));
-
-saveBtn.addEventListener("click", () => {
-  if (!current) return;
-  Plotly.downloadImage(plotEl, {
-    format: "png",
-    filename: current.name.replace(/\.[^.]+$/, ""),
-    width: plotEl.clientWidth,
-    height: plotEl.clientHeight,
-  });
-});
 
 function themeVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -239,16 +426,18 @@ function render() {
   const fontFamily = themeVar("--font-family");
 
   // matplotlib 風: グリッド/ゼロラインなし、プロット領域を四角い枠で囲む
-  const axis = (title: string) => ({
-    title: { text: title },
+  const axis = (title: string, titleStandoff = 4) => ({
+    title: { text: title, standoff: titleStandoff },
     showgrid: false,
     zeroline: false,
     showline: true,
-    mirror: true,
+    mirror: "ticks",
     linecolor: frameColor,
     linewidth: 1,
-    ticks: "outside",
+    ticks: "inside",
     tickcolor: frameColor,
+    ticklen: 6,
+    tickwidth: 1,
   });
 
   Plotly.react(
@@ -262,19 +451,24 @@ function render() {
       marker: { size: 4, color: lineColor },
     }],
     {
-      margin: { l: 60, r: 20, t: 20, b: 58 },
+      margin: { l: 60, r: 20, t: 20, b: 50 },
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: "rgba(0,0,0,0)",
       font: { color: textColor, family: fontFamily },
       dragmode,
-      xaxis: axis(current.columns[xi]),
-      yaxis: axis(current.columns[yi]),
+      xaxis: axis(current.columns[xi], 3),
+      yaxis: axis(current.columns[yi], 5),
     },
-    { responsive: true, displayModeBar: false },
-  );
+    { responsive: true, displayModeBar: false, scrollZoom: false },
+  ).then(() => {
+    attachPlotEvents();
+    resetViewHistory();
+  });
 
   zoomBtn.classList.toggle("active", dragmode === "zoom");
   panBtn.classList.toggle("active", dragmode === "pan");
   lineBtn.classList.toggle("active", plotMode === "lines");
   scatterBtn.classList.toggle("active", plotMode === "markers");
+  updateHistoryButtons();
 }
+updateHistoryButtons();

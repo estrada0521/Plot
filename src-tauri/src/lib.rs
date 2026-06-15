@@ -1,6 +1,9 @@
 use serde::Serialize;
 use std::fs;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
+use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
 #[derive(Serialize)]
 struct Dataset {
@@ -83,6 +86,28 @@ fn read_dataset(path: String) -> Result<Dataset, String> {
     parse_file(&path)
 }
 
+const MENU_NEW_WINDOW: &str = "new-window";
+
+fn create_plot_window(app: &AppHandle) -> tauri::Result<()> {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default();
+    let label = format!("plot-{suffix}");
+
+    WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
+        .title("Raw-Plot")
+        .inner_size(760.0, 520.0)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .focused(true)
+        .build()?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,6 +139,29 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![read_dataset])
+        .setup(|app| {
+            let handle = app.handle();
+            let new_window = MenuItem::with_id(
+                handle,
+                MENU_NEW_WINDOW,
+                "New Window",
+                true,
+                Some("CmdOrCtrl+N"),
+            )?;
+            let file_menu = SubmenuBuilder::new(handle, "File")
+                .item(&new_window)
+                .build()?;
+            let menu = MenuBuilder::new(handle).item(&file_menu).build()?;
+            app.set_menu(menu)?;
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == MENU_NEW_WINDOW {
+                if let Err(err) = create_plot_window(app) {
+                    eprintln!("failed to create plot window: {err}");
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
