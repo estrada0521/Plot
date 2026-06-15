@@ -72,38 +72,54 @@ body {
   align-items: center;
   gap: var(--space-md);
   height: var(--titlebar-height);
-  padding: 0 var(--space-md);
+  padding: 0 4px;
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
 }
 
 .traffic {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 4px;
 }
 
-.tl {
-  width: var(--traffic-size);
-  height: var(--traffic-size);
+.window-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--window-btn-size);
+  height: var(--window-btn-size);
   padding: 0;
+  background: transparent;
   border: none;
   border-radius: 50%;
+  color: var(--color-text);
   cursor: pointer;
+  font-family: var(--font-family);
+  font-size: 13px;
+  line-height: 1;
 }
 
-.tl-close {
-  background: #ff5f57;
+.window-btn:hover {
+  background: var(--color-window-button-hover);
 }
 
-.tl-min {
-  background: #febc2e;
+.window-btn svg {
+  width: var(--window-icon-size);
+  height: var(--window-icon-size);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.tl-max {
-  background: #28c840;
+.pin-btn.active svg {
+  fill: currentColor;
 }
 
 .title {
+  flex: 1;
   color: var(--color-text-muted);
   font-size: var(--font-size-base);
   pointer-events: none;
@@ -121,7 +137,7 @@ body {
   align-self: flex-start;
   flex-shrink: 0;
   height: var(--toolbar-height);
-  padding: 0 var(--space-sm);
+  padding: 0 4px;
   background: var(--color-surface);
   border: 1px solid var(--color-window-border);
   border-top: none;

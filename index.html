@@ -11,9 +11,21 @@
     <div class="panel" id="panel">
       <header class="titlebar" data-tauri-drag-region>
         <div class="traffic">
-          <button id="win-close" class="tl tl-close" title="閉じる"></button>
-          <button id="win-min" class="tl tl-min" title="最小化"></button>
-          <button id="win-max" class="tl tl-max" title="拡大/縮小"></button>
+          <button id="win-close" class="window-btn" title="閉じる" aria-label="閉じる">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7l10 10M17 7L7 17" />
+            </svg>
+          </button>
+          <button id="win-min" class="window-btn" title="最小化" aria-label="最小化">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 15.5h10" />
+            </svg>
+          </button>
+          <button id="win-pin" class="window-btn pin-btn" title="常に手前に表示" aria-label="常に手前に表示">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M14 4l6 6-3.5 1.2-3.8 3.8v4.5L11 21l-2.1-6.1L3 13l1.5-1.7H9l3.8-3.8z" />
+            </svg>
+          </button>
         </div>
         <span id="title" class="title"></span>
       </header>

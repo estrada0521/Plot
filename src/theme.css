@@ -1,7 +1,7 @@
 :root {
   /* 色 */
   --color-bg: rgb(253, 253, 252);
-  --color-surface: rgb(224, 224, 224);
+  --color-surface: rgb(241, 241, 241);
   --color-border: rgb(188, 188, 188);
   --color-text: rgb(11, 11, 11);
   --color-text-muted: rgb(110, 110, 108);
@@ -11,7 +11,7 @@
   /* グラフ */
   --color-plot-line: rgb(11, 11, 11);
   --color-plot-frame: rgb(11, 11, 11);
-  --color-window-border: rgb(120, 120, 120);
+  --color-window-border: rgb(0, 0, 0);
 
   /* フォント (Agent-Window の preset-gothic = sans_stack と同一) */
   --font-family: "anthropicSans", "Anthropic Sans", "SF Pro Text", "Segoe UI",
@@ -26,7 +26,9 @@
   --space-md: 12px;
   --toolbar-height: 32px;
   --titlebar-height: 30px;
-  --traffic-size: 12px;
+  --window-btn-size: 22px;
+  --window-icon-size: 15px;
+  --color-window-button-hover: rgb(212, 212, 212);
   --axis-select-max-width: 130px;
   --panel-init-width: 720px;
   --panel-init-height: 460px;

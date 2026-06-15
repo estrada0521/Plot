@@ -23,9 +23,31 @@ const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
 const lineBtn = document.getElementById("line-btn") as HTMLButtonElement;
 const scatterBtn = document.getElementById("scatter-btn") as HTMLButtonElement;
 const titleEl = document.getElementById("title") as HTMLSpanElement;
+const pinBtn = document.getElementById("win-pin") as HTMLButtonElement;
 
 // --- 自前タイトルバーのウィンドウ操作 ---
 const appWindow = getCurrentWindow();
+let isPinned = false;
+function syncPinButton() {
+  pinBtn.classList.toggle("active", isPinned);
+  pinBtn.title = isPinned ? "常に手前に表示を解除" : "常に手前に表示";
+  pinBtn.setAttribute("aria-pressed", String(isPinned));
+}
+appWindow.isAlwaysOnTop().then((value) => {
+  isPinned = value;
+  syncPinButton();
+});
+pinBtn.addEventListener("click", async () => {
+  isPinned = !isPinned;
+  syncPinButton();
+  try {
+    await appWindow.setAlwaysOnTop(isPinned);
+  } catch (err) {
+    isPinned = !isPinned;
+    syncPinButton();
+    statusEl.textContent = `エラー: ${err}`;
+  }
+});
 (document.getElementById("win-close") as HTMLButtonElement).addEventListener(
   "click",
   () => appWindow.close(),
@@ -33,10 +55,6 @@ const appWindow = getCurrentWindow();
 (document.getElementById("win-min") as HTMLButtonElement).addEventListener(
   "click",
   () => appWindow.minimize(),
-);
-(document.getElementById("win-max") as HTMLButtonElement).addEventListener(
-  "click",
-  () => appWindow.toggleMaximize(),
 );
 
 let current: Dataset | null = null;
@@ -244,7 +262,7 @@ function render() {
       marker: { size: 4, color: lineColor },
     }],
     {
-      margin: { l: 60, r: 20, t: 20, b: 50 },
+      margin: { l: 60, r: 20, t: 20, b: 58 },
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: "rgba(0,0,0,0)",
       font: { color: textColor, family: fontFamily },
