@@ -33,7 +33,7 @@ body {
   min-height: var(--panel-min-height);
   overflow: hidden;
   background: var(--color-bg);
-  border: 1px solid var(--color-window-border);
+  border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius) var(--radius) 0 0;
   box-sizing: border-box;
 }
@@ -75,15 +75,20 @@ body {
   gap: var(--space-md);
   height: var(--titlebar-height);
   padding: 0 4px;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background: linear-gradient(
+    180deg,
+    var(--color-surface-edge) 0%,
+    var(--color-surface-center) 30%,
+    var(--color-surface-center) 100%
+  );
+  border-bottom: var(--border-width) solid var(--color-border);
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
 }
 
 .traffic {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
 }
 
 .window-btn {
@@ -123,7 +128,7 @@ body {
 
 .title {
   flex: 1;
-  color: var(--color-text-muted);
+  color: var(--color-text);
   font-size: var(--font-size-base);
   pointer-events: none;
   white-space: nowrap;
@@ -132,6 +137,7 @@ body {
 }
 
 .toolbar {
+  position: relative;
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
@@ -142,10 +148,18 @@ body {
   flex-shrink: 0;
   height: var(--toolbar-height);
   padding: 0 4px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-window-border);
+  background:
+    linear-gradient(180deg, var(--color-glass-highlight), rgba(255, 255, 255, 0) 44%),
+    var(--color-glass-surface);
+  border: 1px solid var(--color-glass-edge);
   border-radius: var(--radius);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.24),
+    0 8px 24px var(--color-glass-shadow);
   overflow: visible;
+  -webkit-backdrop-filter: blur(20px) saturate(1.25);
+  backdrop-filter: blur(20px) saturate(1.25);
 }
 
 .toolbar > *,

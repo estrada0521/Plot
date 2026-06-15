@@ -2,17 +2,23 @@
   /* 色 */
   --color-bg: rgb(253, 253, 252);
   --color-surface: rgb(241, 241, 241);
-  --color-border: rgb(188, 188, 188);
+  --color-surface-center: rgb(233, 233, 231);
+  --color-surface-edge: rgb(212, 212, 210);
+  --color-border: var(--color-surface-edge);
   --color-text: rgb(11, 11, 11);
   --color-text-muted: rgb(110, 110, 108);
   --color-text-disabled: rgb(165, 165, 165);
   --color-accent: #0a84ff;
   --color-accent-text: #ffffff;
+  --color-glass-surface: rgba(242, 242, 242, 0.84);
+  --color-glass-highlight: rgba(255, 255, 255, 0.9);
+  --color-glass-edge: rgba(255, 255, 255, 0.62);
+  --color-glass-shadow: rgba(0, 0, 0, 0.11);
 
   /* グラフ */
   --color-plot-line: rgb(11, 11, 11);
   --color-plot-frame: rgb(11, 11, 11);
-  --color-window-border: rgb(0, 0, 0);
+  --border-width: 1px;
 
   /* フォント (Agent-Window の preset-gothic = sans_stack と同一) */
   --font-family: "anthropicSans", "Anthropic Sans", "SF Pro Text", "Segoe UI",
@@ -25,12 +31,13 @@
   /* 余白・寸法 */
   --space-sm: 6px;
   --space-md: 12px;
+  --panel-header-gap: 0px;
   --panel-footer-gap: 6px;
   --toolbar-height: 32px;
-  --titlebar-height: 30px;
+  --titlebar-height: 24px;
   --window-btn-size: 22px;
   --window-icon-size: 15px;
-  --color-window-button-hover: rgb(212, 212, 212);
+  --color-window-button-hover: rgba(0, 0, 0, 0.12);
   --panel-init-width: 720px;
   --panel-init-height: 280px;
   --panel-min-width: 36px;

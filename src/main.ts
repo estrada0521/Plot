@@ -168,6 +168,14 @@ document.querySelectorAll<HTMLElement>(".grip").forEach((grip) => {
   });
 });
 
+// ⌘O で footer 左端の「ファイルを開く」を起動
+window.addEventListener("keydown", (e) => {
+  if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "o") {
+    e.preventDefault();
+    openBtn.click();
+  }
+});
+
 openBtn.addEventListener("click", async () => {
   const selected = await open({
     multiple: false,
@@ -473,7 +481,7 @@ function render() {
       xaxis: axis(current.columns[xi], 3),
       yaxis: axis(current.columns[yi], 5),
     },
-    { responsive: true, displayModeBar: false, scrollZoom: false },
+    { responsive: true, displayModeBar: false, scrollZoom: false, showTips: false },
   ).then(() => {
     attachPlotEvents();
     resetViewHistory();
