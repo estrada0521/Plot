@@ -20,8 +20,7 @@ body {
   gap: var(--panel-footer-gap);
 }
 
-/* Plot パネルは任意サイズ。左下固定でハンドル（上辺/右辺/右上角）で伸縮し、
-   ウィンドウがコンテンツに吸着する。 */
+/* Plot パネル。幅は ⌘N の新規ウィンドウ生成時だけフッター幅に合わせ、以後は独立。 */
 .panel {
   position: relative;
   display: flex;
@@ -36,6 +35,7 @@ body {
   border: var(--border-width) solid var(--color-border);
   border-radius: var(--radius) var(--radius) 0 0;
   box-sizing: border-box;
+  box-shadow: 0 4px 12px var(--color-glass-shadow), 0 0 1px rgba(0, 0, 0, 0.2);
 }
 
 /* リサイズハンドル（左下固定なので上辺=高さ / 右辺=幅 / 右上角=両方） */
@@ -76,11 +76,12 @@ body {
   height: var(--titlebar-height);
   padding: 0 4px;
   background: linear-gradient(
-    180deg,
-    var(--color-surface-edge) 0%,
-    var(--color-surface-center) 30%,
-    var(--color-surface-center) 100%
+    to bottom,
+    var(--color-surface) 0%,
+    var(--color-surface-center) 50%,
+    var(--color-surface-edge) 100%
   );
+  box-shadow: inset 0 1px 0 var(--color-glass-highlight);
   border-bottom: var(--border-width) solid var(--color-border);
   border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
 }

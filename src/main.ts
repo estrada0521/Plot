@@ -7,7 +7,9 @@ import Plotly from "plotly.js-dist-min";
 interface Dataset {
   name: string;
   columns: string[];
-  rows: number[][];
+  rows: (number | null)[][];
+  default_x?: string;
+  default_y?: string;
 }
 
 const openBtn = document.getElementById("open-btn") as HTMLButtonElement;
@@ -15,7 +17,6 @@ const xSelect = document.getElementById("x-select") as HTMLSelectElement;
 const ySelect = document.getElementById("y-select") as HTMLSelectElement;
 const statusEl = document.getElementById("status") as HTMLSpanElement;
 const plotEl = document.getElementById("plot") as HTMLDivElement;
-const toolsEl = document.getElementById("tools") as HTMLDivElement;
 const homeBtn = document.getElementById("home-btn") as HTMLButtonElement;
 const undoBtn = document.getElementById("undo-btn") as HTMLButtonElement;
 const redoBtn = document.getElementById("redo-btn") as HTMLButtonElement;
@@ -64,7 +65,6 @@ let plotMode: "lines" | "markers" = "lines";
 
 const panelEl = document.getElementById("panel") as HTMLDivElement;
 const footerEl = document.querySelector(".toolbar") as HTMLElement;
-let panelWidthAdjustedByUser = false;
 
 // パネルのサイズ変化に追従して Plotly を再描画
 const resizeObserver = new ResizeObserver(() => {
@@ -103,18 +103,9 @@ async function applyFit() {
 function fitWindow() {
   applyFit();
 }
-function syncPanelWidthToFooter() {
-  if (panelWidthAdjustedByUser) return;
-  const footerWidth = Math.ceil(footerEl.getBoundingClientRect().width);
-  if (footerWidth > 0) panelEl.style.width = `${footerWidth}px`;
-}
-// フッター幅が変わった時（X/Y選択の出現など）はウィンドウだけ吸着させる。
-// panel 幅は起動直後だけ footer 初期幅へ合わせ、データ読み込み後の plot 幅は変えない。
+// フッター幅が変わった時（X/Y選択の出現など）はウィンドウをコンテンツに吸着させる。
 new ResizeObserver(() => fitWindow()).observe(footerEl);
-requestAnimationFrame(() => {
-  syncPanelWidthToFooter();
-  fitWindow();
-});
+fitWindow();
 
 // 左下固定の前提で、上辺=高さ / 右辺=幅 / 右上角=両方 を伸縮。
 // 計算は screen 座標で行い、ウィンドウ移動による座標ブレを排除する。
@@ -146,7 +137,6 @@ function onResizeUp() {
 document.querySelectorAll<HTMLElement>(".grip").forEach((grip) => {
   grip.addEventListener("pointerdown", (e) => {
     resizeMode = grip.dataset.resize as "t" | "r" | "c";
-    if (resizeMode === "r" || resizeMode === "c") panelWidthAdjustedByUser = true;
     startScreenX = e.screenX;
     startScreenY = e.screenY;
     const r = panelEl.getBoundingClientRect();
@@ -179,7 +169,7 @@ window.addEventListener("keydown", (e) => {
 openBtn.addEventListener("click", async () => {
   const selected = await open({
     multiple: false,
-    filters: [{ name: "Data", extensions: ["csv", "dat"] }],
+    filters: [{ name: "Data", extensions: ["csv", "dat", "txt", "ras"] }],
   });
   if (typeof selected !== "string") return;
 
@@ -205,9 +195,11 @@ function setupAxisSelectors(ds: Dataset) {
       sel.appendChild(opt);
     });
   };
-  fill(xSelect, 0);
-  fill(ySelect, ds.columns.length > 1 ? 1 : 0);
-  toolsEl.hidden = false;
+  // metadata.json の既定軸があれば優先。なければ先頭2列。
+  const dx = ds.default_x ? ds.columns.indexOf(ds.default_x) : -1;
+  const dy = ds.default_y ? ds.columns.indexOf(ds.default_y) : -1;
+  fill(xSelect, dx >= 0 ? dx : 0);
+  fill(ySelect, dy >= 0 ? dy : ds.columns.length > 1 ? 1 : 0);
   requestAnimationFrame(() => fitWindow());
 }
 
@@ -423,7 +415,15 @@ zoomBtn.addEventListener("click", () => setDragmode("zoom"));
 function setPlotMode(mode: "lines" | "markers") {
   plotMode = mode;
   if (current) {
+    // 折れ線↔散布図でマーカー分の autorange 余白により範囲が変わるのを防ぐため、
+    // 現在の表示範囲を保持したままモードだけ切り替える。
+    const fl = (plotEl as unknown as { _fullLayout?: { xaxis?: { range?: number[] }; yaxis?: { range?: number[] } } })._fullLayout;
+    const xr = fl?.xaxis?.range ? fl.xaxis.range.slice() : null;
+    const yr = fl?.yaxis?.range ? fl.yaxis.range.slice() : null;
     Plotly.restyle(plotEl, { mode }, [0]);
+    if (xr && yr) {
+      Plotly.relayout(plotEl, { "xaxis.range": xr, "yaxis.range": yr });
+    }
     lineBtn.classList.toggle("active", plotMode === "lines");
     scatterBtn.classList.toggle("active", plotMode === "markers");
   }
@@ -469,7 +469,7 @@ function render() {
       y,
       type: "scattergl",
       mode: plotMode,
-      line: { width: 1.2, color: lineColor },
+      line: { width: 2.5, color: lineColor },
       marker: { size: 4, color: lineColor },
     }],
     {

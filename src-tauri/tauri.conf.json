@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "Raw-Plot",
-        "width": 760,
-        "height": 520,
+        "width": 360,
+        "height": 320,
         "resizable": false,
         "decorations": false,
         "transparent": true,
