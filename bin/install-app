@@ -2,19 +2,19 @@
 # 最新ビルドを /Applications に一本化してインストールする。
 # - 起動中のアプリを終了
 # - リリースビルド
-# - 旧 /Applications/Raw-Plot.app を削除
+# - 旧 /Applications/Plots.app を削除
 # - 新ビルドを /Applications へ移動（ビルドディレクトリ側は残さない＝重複防止）
 # - 起動
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP_NAME="Raw-Plot.app"
+APP_NAME="Plots.app"
 BUILD_APP="src-tauri/target/release/bundle/macos/${APP_NAME}"
 DEST="/Applications/${APP_NAME}"
 
 # 1. 起動中インスタンスを確実に終了（quit が効かない場合に備え強制終了も）
-osascript -e 'tell application "Raw-Plot" to quit' >/dev/null 2>&1 || true
-pkill -f "Raw-Plot.app/Contents/MacOS/raw-plot" 2>/dev/null || true
+osascript -e 'tell application "Plots" to quit' >/dev/null 2>&1 || true
+pkill -f "Plots.app/Contents/MacOS/plots" 2>/dev/null || true
 sleep 0.5
 
 # 2. リリースビルド

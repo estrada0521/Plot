@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Raw-Plot",
+  "productName": "Plots",
   "version": "0.1.0",
-  "identifier": "com.okadaharuto.rawplot",
+  "identifier": "com.okadaharuto.plots",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Raw-Plot",
+        "title": "Plots",
         "width": 360,
         "height": 320,
         "resizable": false,
@@ -40,7 +40,7 @@
       {
         "ext": ["csv", "dat", "txt", "ras"],
         "name": "Data File",
-        "description": "Raw-Plot で開けるデータファイル",
+        "description": "Plots で開けるデータファイル",
         "role": "Viewer"
       }
     ]

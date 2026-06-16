@@ -1,5 +1,5 @@
 {
-  "name": "raw-plot",
+  "name": "plots",
   "version": "0.1.0",
   "description": "科学研究用 rawdata 即時プロットアプリ (csv/dat)",
   "type": "module",

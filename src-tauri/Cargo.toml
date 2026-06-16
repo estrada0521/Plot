@@ -1,11 +1,11 @@
 [package]
-name = "raw-plot"
+name = "plots"
 version = "0.1.0"
 description = "科学研究用 rawdata 即時プロットアプリ"
 edition = "2021"
 
 [lib]
-name = "raw_plot_lib"
+name = "plots_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

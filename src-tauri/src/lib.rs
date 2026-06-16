@@ -505,7 +505,7 @@ fn spawn_window(app: &AppHandle, pending_path: Option<&str>) -> tauri::Result<()
         });
 
     let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
-        .title("Raw-Plot")
+        .title("Plots")
         .inner_size(360.0, 320.0)
         .resizable(false)
         .decorations(false)
@@ -614,7 +614,7 @@ pub fn run() {
                 true,
                 Some("CmdOrCtrl+,"),
             )?;
-            let app_menu = SubmenuBuilder::new(handle, "Raw-Plot")
+            let app_menu = SubmenuBuilder::new(handle, "Plots")
                 .item(&settings_item)
                 .separator()
                 .hide()
