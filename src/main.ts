@@ -305,10 +305,35 @@ async function savePanel() {
   "click",
   () => savePanel(),
 );
+// 片方の軸の列を変更したとき、もう片方の軸の表示範囲は維持して描画する。
+function changeAxis(changed: "x" | "y") {
+  if (!current) return;
+  const gd = plotEl as PlotElementWithHistory;
+  const keep = changed === "x" ? "y" : "x";
+  const keepAxis = keep === "x" ? gd._fullLayout?.xaxis : gd._fullLayout?.yaxis;
+  const range = readAxisNumericRange(keepAxis);
+  render(range ? { axis: keep, range } : undefined);
+}
+
+// 軸の列を切り替える（⌘X = X軸 / ⌘Y = Y軸、Shift 併用で逆方向に1つ戻る）。
+function cycleAxis(sel: HTMLSelectElement, dir: number) {
+  const n = sel.options.length;
+  if (!current || n === 0) return;
+  sel.selectedIndex = (sel.selectedIndex + dir + n) % n;
+  changeAxis(sel === xSelect ? "x" : "y");
+}
 window.addEventListener("keydown", (e) => {
-  if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "s") {
+  if (!e.metaKey || e.ctrlKey || e.altKey) return;
+  const key = e.key.toLowerCase();
+  if (key === "s" && !e.shiftKey) {
     e.preventDefault();
     savePanel();
+  } else if (key === "x") {
+    e.preventDefault();
+    cycleAxis(xSelect, e.shiftKey ? -1 : 1);
+  } else if (key === "y") {
+    e.preventDefault();
+    cycleAxis(ySelect, e.shiftKey ? -1 : 1);
   }
 });
 
@@ -358,8 +383,8 @@ function setupAxisSelectors(ds: Dataset) {
   requestAnimationFrame(() => fitWindow());
 }
 
-xSelect.addEventListener("change", render);
-ySelect.addEventListener("change", render);
+xSelect.addEventListener("change", () => changeAxis("x"));
+ySelect.addEventListener("change", () => changeAxis("y"));
 
 // --- matplotlib 風ナビゲーションツールバー（自前 → Plotly API） ---
 function setDragmode(mode: "zoom" | "pan") {
@@ -590,7 +615,8 @@ function themeVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
-function render() {
+// preserve を渡すと、その軸だけ現在の表示範囲を維持し、もう片方を再フィットする。
+function render(preserve?: { axis: "x" | "y"; range: [number, number] }) {
   if (!current) return;
   const xi = Number(xSelect.value);
   const yi = Number(ySelect.value);
@@ -603,8 +629,13 @@ function render() {
   const textColor = themeVar("--color-text");
   const fontFamily = themeVar("--font-family");
 
+  const keep = (which: "x" | "y") =>
+    preserve && preserve.axis === which
+      ? { autorange: false, range: preserve.range }
+      : { autorange: true };
+
   // matplotlib 風: グリッド/ゼロラインなし、プロット領域を四角い枠で囲む
-  const axis = (title: string, titleStandoff = 4) => ({
+  const axis = (title: string, which: "x" | "y", titleStandoff = 4) => ({
     title: { text: title, standoff: titleStandoff },
     showgrid: false,
     zeroline: false,
@@ -616,6 +647,7 @@ function render() {
     tickcolor: frameColor,
     ticklen: 6,
     tickwidth: 1,
+    ...keep(which),
   });
 
   Plotly.react(
@@ -634,8 +666,8 @@ function render() {
       plot_bgcolor: "rgba(0,0,0,0)",
       font: { color: textColor, family: fontFamily },
       dragmode,
-      xaxis: axis(current.columns[xi], 3),
-      yaxis: axis(current.columns[yi], 5),
+      xaxis: axis(current.columns[xi], "x", 3),
+      yaxis: axis(current.columns[yi], "y", 5),
     },
     { responsive: true, displayModeBar: false, scrollZoom: false, showTips: false },
   ).then(() => {

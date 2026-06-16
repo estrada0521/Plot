@@ -431,12 +431,13 @@ fn open_filter_window(
         let _ = w.set_focus();
         return Ok(());
     }
-    // 対象（フォーカス中）ウィンドウの右下へ少しずらして表示する。
-    const OFFSET: f64 = 28.0;
+    // 対象（フォーカス中）ウィンドウの真下に、重ならないよう少し離して表示する。
+    const GAP: f64 = 8.0;
     let near = app.get_webview_window(&source_label).and_then(|w| {
         let sf = w.scale_factor().ok()?;
-        let p = w.outer_position().ok()?.to_logical::<f64>(sf);
-        Some((p.x + OFFSET, p.y + OFFSET))
+        let pos = w.outer_position().ok()?.to_logical::<f64>(sf);
+        let size = w.outer_size().ok()?.to_logical::<f64>(sf);
+        Some((pos.x, pos.y + size.height + GAP))
     });
     let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("filter.html".into()))
         .title("Filter")
@@ -483,16 +484,16 @@ fn dispatch_menu_action(app: &AppHandle, action: &str) {
 }
 
 /// 開いているウィンドウを画面左上から行詰めでタイル配置する。
+/// plot とその filter ウィンドウは横並び（plot 左・filter 右）の1ユニットとして扱う。
 fn arrange_windows(app: &AppHandle) {
-    let mut wins: Vec<_> = app.webview_windows().into_iter().collect();
-    if wins.is_empty() {
+    let all = app.webview_windows();
+    if all.is_empty() {
         return;
     }
-    wins.sort_by(|a, b| a.0.cmp(&b.0));
+    let any = all.values().next().unwrap();
 
     // 配置領域（プライマリモニタ）。取得できなければ既定値。
-    let (area_x, area_y, area_w) = wins[0]
-        .1
+    let (area_x, area_y, area_w) = any
         .primary_monitor()
         .ok()
         .flatten()
@@ -504,36 +505,85 @@ fn arrange_windows(app: &AppHandle) {
         })
         .unwrap_or((0.0, 0.0, 1440.0));
 
-    let metrics = app.state::<WindowMetrics>();
+    // plot パネル実寸スナップショット（無ければウィンドウ実寸で代用）。
+    let metric_map: HashMap<String, (f64, f64)> = app
+        .state::<WindowMetrics>()
+        .0
+        .lock()
+        .map(|m| m.clone())
+        .unwrap_or_default();
+    let dims = |label: &str, w: &tauri::WebviewWindow| -> (f64, f64) {
+        if let Some(d) = metric_map.get(label).copied() {
+            return d;
+        }
+        let s = w.scale_factor().unwrap_or(1.0);
+        w.outer_size()
+            .map(|sz| {
+                let l = sz.to_logical::<f64>(s);
+                (l.width, l.height)
+            })
+            .unwrap_or((360.0, 320.0))
+    };
+
+    // ユニット構築: plot（main / plot-*）ごとに [plot, その filter] をまとめる。
+    // 残り（settings や対応 plot の無い filter）は単独ユニット。
+    let mut plot_labels: Vec<String> = all
+        .keys()
+        .filter(|l| l.as_str() == "main" || l.starts_with("plot-"))
+        .cloned()
+        .collect();
+    plot_labels.sort();
+    let mut units: Vec<Vec<String>> = Vec::new();
+    let mut used: Vec<String> = Vec::new();
+    for pl in &plot_labels {
+        used.push(pl.clone());
+        let mut unit = vec![pl.clone()];
+        let fl = format!("filter-{pl}");
+        if all.contains_key(&fl) {
+            unit.push(fl.clone());
+            used.push(fl);
+        }
+        units.push(unit);
+    }
+    let mut rest: Vec<String> = all.keys().filter(|l| !used.contains(l)).cloned().collect();
+    rest.sort();
+    for r in rest {
+        units.push(vec![r]);
+    }
+
     let gap = 12.0;
     let margin_top = 28.0; // メニューバー分
     let mut x = area_x + gap;
     let mut y = area_y + margin_top;
     let mut row_h: f64 = 0.0; // 行内パネル高さの最大
-    for (label, w) in &wins {
-        let s = w.scale_factor().unwrap_or(1.0);
-        let outer = w
-            .outer_size()
-            .map(|sz| sz.to_logical::<f64>(s))
-            .unwrap_or_else(|_| tauri::LogicalSize::new(360.0, 320.0));
-        // plot パネル実寸（無ければウィンドウ実寸で代用）。パネル幅で詰めるとフッターは重なる。
-        let (pw, ph) = metrics
-            .0
-            .lock()
-            .ok()
-            .and_then(|m| m.get(label.as_str()).copied())
-            .unwrap_or((outer.width, outer.height));
-        // 行末で折り返し
-        if x > area_x + gap && x + pw > area_x + area_w - gap {
+    for unit in &units {
+        let sizes: Vec<(f64, f64)> = unit
+            .iter()
+            .filter_map(|l| all.get(l).map(|w| dims(l, w)))
+            .collect();
+        if sizes.is_empty() {
+            continue;
+        }
+        let unit_w: f64 =
+            sizes.iter().map(|d| d.0).sum::<f64>() + gap * (sizes.len() as f64 - 1.0);
+        // ユニット単位で行末折り返し（plot と filter を分断しない）。
+        if x > area_x + gap && x + unit_w > area_x + area_w - gap {
             x = area_x + gap;
             y += row_h + gap;
             row_h = 0.0;
         }
-        let _ = w.set_position(LogicalPosition::new(x, y));
-        x += pw + gap;
-        if ph > row_h {
-            row_h = ph;
+        let mut ux = x;
+        for (i, l) in unit.iter().enumerate() {
+            let (pw, ph) = sizes[i];
+            if let Some(w) = all.get(l) {
+                let _ = w.set_position(LogicalPosition::new(ux, y));
+            }
+            ux += pw + gap;
+            if ph > row_h {
+                row_h = ph;
+            }
         }
+        x += unit_w + gap;
     }
 }
 
@@ -741,9 +791,9 @@ pub fn run() {
                 .item(&reveal)
                 .item(&open_editor)
                 .item(&copy_path_item)
-                .separator()
-                .item(&filter_item)
                 .build()?;
+            // Tools メニュー（データ操作系。今後ここに追加していく）。
+            let tools_menu = SubmenuBuilder::new(handle, "Tools").item(&filter_item).build()?;
             let next_window = MenuItem::with_id(
                 handle,
                 MENU_NEXT_WINDOW,
@@ -772,14 +822,14 @@ pub fn run() {
                 .item(&prev_window)
                 .item(&arrange)
                 .build()?;
-            // 標準の Edit メニュー（⌘A 全選択 / ⌘C / ⌘V / ⌘X / ⌘Z / ⇧⌘Z）。
+            // 標準の Edit メニュー（⌘A 全選択 / ⌘C / ⌘V / ⌘Z / ⇧⌘Z）。
             // カスタムメニューが既定メニューを置き換えるため、これが無いと入力欄で
             // selectAll/copy/paste 等の標準ショートカットが効かなくなる。
+            // Cut(⌘X) は plot の軸切替 ⌘X と衝突するため意図的に外している。
             let edit_menu = SubmenuBuilder::new(handle, "Edit")
                 .undo()
                 .redo()
                 .separator()
-                .cut()
                 .copy()
                 .paste()
                 .select_all()
@@ -788,6 +838,7 @@ pub fn run() {
                 .item(&app_menu)
                 .item(&file_menu)
                 .item(&edit_menu)
+                .item(&tools_menu)
                 .item(&window_menu)
                 .build()?;
             app.set_menu(menu)?;
