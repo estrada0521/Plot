@@ -289,6 +289,21 @@ fn read_dataset(path: String) -> Result<Dataset, String> {
 }
 
 const MENU_NEW_WINDOW: &str = "new-window";
+const MENU_SETTINGS: &str = "settings";
+
+/// 設定ウィンドウを開く（既にあれば前面化＝シングルトン）。
+fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
+    if let Some(w) = app.get_webview_window("settings") {
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+        .title("設定")
+        .inner_size(340.0, 170.0)
+        .resizable(false)
+        .build()?;
+    Ok(())
+}
 const MENU_NEXT_WINDOW: &str = "next-window";
 const MENU_PREV_WINDOW: &str = "prev-window";
 const MENU_ARRANGE: &str = "arrange-windows";
@@ -491,8 +506,17 @@ pub fn run() {
                 true,
                 Some("CmdOrCtrl+N"),
             )?;
-            // 標準のアプリメニュー（Hide ⌘H / Hide Others / Quit ⌘Q など）を復活
+            // 標準のアプリメニュー（Settings ⌘, / Hide ⌘H / Quit ⌘Q など）
+            let settings_item = MenuItem::with_id(
+                handle,
+                MENU_SETTINGS,
+                "Settings…",
+                true,
+                Some("CmdOrCtrl+,"),
+            )?;
             let app_menu = SubmenuBuilder::new(handle, "Raw-Plot")
+                .item(&settings_item)
+                .separator()
                 .hide()
                 .hide_others()
                 .show_all()
@@ -547,6 +571,11 @@ pub fn run() {
             MENU_NEXT_WINDOW => cycle_windows(app, true),
             MENU_PREV_WINDOW => cycle_windows(app, false),
             MENU_ARRANGE => arrange_windows(app),
+            MENU_SETTINGS => {
+                if let Err(err) = open_settings_window(app) {
+                    eprintln!("failed to open settings window: {err}");
+                }
+            }
             _ => {}
         })
         .build(tauri::generate_context!())

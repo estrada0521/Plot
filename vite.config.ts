@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { resolve } from "node:path";
 
 // Tauri は固定ポート 1420 を期待する
 export default defineConfig({
@@ -10,5 +11,11 @@ export default defineConfig({
   build: {
     target: "es2021",
     outDir: "dist",
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, "index.html"),
+        settings: resolve(__dirname, "settings.html"),
+      },
+    },
   },
 });

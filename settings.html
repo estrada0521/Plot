@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Settings</title>
+    <link rel="stylesheet" href="/src/theme.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--color-surface-center);
+        color: var(--color-chrome-text);
+        font-family: var(--font-family);
+        font-size: var(--font-size-base);
+      }
+      body {
+        padding: 22px 26px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 28px;
+      }
+      .label {
+        white-space: nowrap;
+      }
+      select {
+        min-width: 190px;
+        padding: 5px 10px;
+        font-size: var(--font-size-base);
+        font-family: var(--font-family);
+        color: var(--color-chrome-text);
+        background: var(--color-glass-surface);
+        border: none;
+        border-radius: 7px;
+        cursor: pointer;
+      }
+      select:focus {
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="row">
+      <span class="label">Theme</span>
+      <select id="theme-select">
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="system">System</option>
+      </select>
+    </div>
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
+</html>

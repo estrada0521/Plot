@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
+import { listen } from "@tauri-apps/api/event";
+import { applyTheme, loadThemePref, onSystemThemeChange, saveThemePref, type ThemePref } from "./theme-util";
 import Plotly from "plotly.js-dist-min";
 
 interface Dataset {
@@ -59,6 +61,25 @@ pinBtn.addEventListener("click", async () => {
   "click",
   () => appWindow.minimize(),
 );
+
+// 非フォーカス時はヘッダーのタイトルを薄く表示
+appWindow
+  .onFocusChanged(({ payload: focused }) => {
+    document.body.classList.toggle("window-blurred", !focused);
+  })
+  .catch(() => {});
+
+// --- テーマ適用（設定は別ウィンドウで変更し、イベントで反映） ---
+let themePref: ThemePref = loadThemePref();
+applyTheme(themePref);
+onSystemThemeChange(() => {
+  if (themePref === "system") applyTheme(themePref);
+});
+listen<ThemePref>("theme-changed", (e) => {
+  themePref = e.payload;
+  saveThemePref(themePref);
+  applyTheme(themePref);
+}).catch(() => {});
 
 let current: Dataset | null = null;
 let dragmode: "zoom" | "pan" = "zoom";
