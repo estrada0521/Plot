@@ -38,9 +38,10 @@
   --toolbar-height: 32px;
   --toolbar-max-width: 460px;
   --titlebar-height: 28px;
-  --window-btn-size: 22px;
-  --window-icon-size: 15px;
+  --window-btn-size: 18px;
+  --window-icon-size: 13px;
   --color-window-button-hover: rgba(0, 0, 0, 0.12);
+  --color-header-button-hover: rgba(0, 0, 0, 0.055);
   --color-icon-active: rgba(0, 0, 0, 0.15);
   --panel-init-width: 360px;
   --panel-init-height: 280px;
@@ -69,5 +70,6 @@ html[data-theme="dark"] {
   --color-glass-edge: rgba(255, 255, 255, 0.10);
   --color-glass-shadow: rgba(0, 0, 0, 0.55);
   --color-window-button-hover: rgba(255, 255, 255, 0.16);
+  --color-header-button-hover: rgba(255, 255, 255, 0.075);
   --color-icon-active: rgba(255, 255, 255, 0.22);
 }

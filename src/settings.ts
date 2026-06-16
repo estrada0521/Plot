@@ -11,9 +11,12 @@ import {
 
 const win = getCurrentWindow();
 
+// 自前タイトルバーのウィンドウ操作
+document.getElementById("win-close")?.addEventListener("click", () => win.close());
+document.getElementById("win-min")?.addEventListener("click", () => win.minimize());
+
 function apply(pref: ThemePref) {
   applyTheme(pref);
-  // 設定ウィンドウのネイティブ枠（タイトルバー）もテーマに合わせる
   win.setTheme(resolveTheme(pref)).catch(() => {});
 }
 

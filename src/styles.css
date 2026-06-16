@@ -72,9 +72,9 @@ body {
 .titlebar {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
+  gap: 8px;
   height: var(--titlebar-height);
-  padding: 0 4px;
+  padding: 0 7px;
   background: linear-gradient(
     to bottom,
     var(--color-surface) 0%,
@@ -89,7 +89,7 @@ body {
 .traffic {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 
 .window-btn {
@@ -110,7 +110,7 @@ body {
 }
 
 .window-btn:hover {
-  background: var(--color-window-button-hover);
+  background: var(--color-header-button-hover);
 }
 
 .window-btn svg {
@@ -130,7 +130,7 @@ body {
 .title {
   flex: 1;
   color: var(--color-chrome-text);
-  font-size: var(--font-size-base);
+  font-size: 12px;
   pointer-events: none;
   white-space: nowrap;
   overflow: hidden;
@@ -269,5 +269,51 @@ body.window-blurred .title {
 .plot {
   flex: 1;
   min-height: 0;
+}
+
+/* 設定ウィンドウ（フレームレス・自前信号機） */
+.settings-body {
+  display: block;
+  background: transparent;
+}
+
+.settings-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--color-surface-center);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.settings-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr 150px;
+  align-items: center;
+  gap: 16px;
+  font-size: var(--font-size-base);
+}
+
+.settings-row select {
+  width: 150px;
+  padding: 5px 9px;
+  font: inherit;
+  color: var(--color-chrome-text);
+  background: var(--color-glass-surface);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.settings-row select:focus {
+  outline: none;
 }
 

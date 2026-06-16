@@ -298,9 +298,13 @@ fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-        .title("設定")
-        .inner_size(340.0, 170.0)
+        .title("Settings")
+        .inner_size(340.0, 150.0)
         .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(true)
+        .focused(true)
         .build()?;
     Ok(())
 }

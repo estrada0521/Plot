@@ -5,58 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Settings</title>
     <link rel="stylesheet" href="/src/theme.css" />
-    <style>
-      * {
-        box-sizing: border-box;
-      }
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-        background: var(--color-surface-center);
-        color: var(--color-chrome-text);
-        font-family: var(--font-family);
-        font-size: var(--font-size-base);
-      }
-      body {
-        padding: 22px 26px;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
-      .row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 28px;
-      }
-      .label {
-        white-space: nowrap;
-      }
-      select {
-        min-width: 190px;
-        padding: 5px 10px;
-        font-size: var(--font-size-base);
-        font-family: var(--font-family);
-        color: var(--color-chrome-text);
-        background: var(--color-glass-surface);
-        border: none;
-        border-radius: 7px;
-        cursor: pointer;
-      }
-      select:focus {
-        outline: none;
-      }
-    </style>
+    <link rel="stylesheet" href="/src/styles.css" />
   </head>
-  <body>
-    <div class="row">
-      <span class="label">Theme</span>
-      <select id="theme-select">
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
-        <option value="system">System</option>
-      </select>
+  <body class="settings-body">
+    <div class="settings-shell">
+      <header class="titlebar" data-tauri-drag-region>
+        <div class="traffic">
+          <button id="win-close" class="window-btn" title="閉じる" aria-label="閉じる">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
+          </button>
+          <button id="win-min" class="window-btn" title="最小化" aria-label="最小化">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 15.5h10" /></svg>
+          </button>
+        </div>
+        <span class="title">Settings</span>
+      </header>
+      <main class="settings-panel">
+        <div class="settings-row">
+          <span>Theme</span>
+          <select id="theme-select">
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+            <option value="system">System</option>
+          </select>
+        </div>
+      </main>
     </div>
     <script type="module" src="/src/settings.ts"></script>
   </body>
