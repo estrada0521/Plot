@@ -82,6 +82,7 @@ listen<ThemePref>("theme-changed", (e) => {
 }).catch(() => {});
 
 let current: Dataset | null = null;
+let currentPath: string | null = null;
 let dragmode: "zoom" | "pan" = "zoom";
 let plotMode: "lines" | "markers" = "lines";
 
@@ -188,18 +189,34 @@ document.querySelectorAll<HTMLElement>(".grip").forEach((grip) => {
   });
 });
 
-// ⌘O で footer 左端の「ファイルを開く」を起動
-window.addEventListener("keydown", (e) => {
-  if (e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "o") {
-    e.preventDefault();
+// File メニュー（⌘O/⌘F/⌘E/⌘⇧C）からの操作。フォーカス中ウィンドウにのみ届く。
+function menuAction(action: string) {
+  if (action === "open") {
     openBtn.click();
+    return;
   }
-});
+  if (!currentPath) return;
+  const fail = (err: unknown) => {
+    statusEl.textContent = `エラー: ${err}`;
+  };
+  if (action === "reveal") {
+    invoke("reveal_in_finder", { path: currentPath }).catch(fail);
+  } else if (action === "editor") {
+    invoke("open_with_editor", {
+      path: currentPath,
+      editor: localStorage.getItem("editor") ?? "",
+    }).catch(fail);
+  } else if (action === "copy-path") {
+    invoke("copy_path", { text: currentPath }).catch(fail);
+  }
+}
+listen<string>("menu-action", (e) => menuAction(e.payload)).catch(() => {});
 
 async function loadDataset(path: string) {
   statusEl.textContent = "";
   try {
     current = await invoke<Dataset>("read_dataset", { path });
+    currentPath = path;
     await invoke("mark_window_loaded");
     titleEl.textContent = current.display_name ?? current.name;
     setupAxisSelectors(current);

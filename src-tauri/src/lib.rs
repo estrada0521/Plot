@@ -1,12 +1,16 @@
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
-use tauri::{AppHandle, LogicalPosition, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{
+    AppHandle, Emitter, LogicalPosition, Manager, State, WebviewUrl, WebviewWindowBuilder,
+};
 
 /// 新規ウィンドウへ「起動時に開くファイル」を引き渡すための保管庫（label → path）。
 #[derive(Default)]
@@ -288,6 +292,47 @@ fn read_dataset(path: String) -> Result<Dataset, String> {
     parse_file(&path)
 }
 
+/// Finder で対象ファイルを表示（選択状態で開く）。
+#[tauri::command]
+fn reveal_in_finder(path: String) -> Result<(), String> {
+    Command::new("open")
+        .arg("-R")
+        .arg(&path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// 指定エディタで開く。editor が空なら既定のテキストエディタ（open -t）で開く。
+#[tauri::command]
+fn open_with_editor(path: String, editor: String) -> Result<(), String> {
+    let editor = editor.trim();
+    let mut cmd = Command::new("open");
+    if editor.is_empty() {
+        cmd.arg("-t").arg(&path);
+    } else {
+        cmd.arg("-a").arg(editor).arg(&path);
+    }
+    cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// 対象ファイルのパスをクリップボードへコピー（pbcopy）。
+#[tauri::command]
+fn copy_path(text: String) -> Result<(), String> {
+    let mut child = Command::new("pbcopy")
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or("pbcopy stdin unavailable")?
+        .write_all(text.as_bytes())
+        .map_err(|e| e.to_string())?;
+    child.wait().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 const MENU_NEW_WINDOW: &str = "new-window";
 const MENU_SETTINGS: &str = "settings";
 
@@ -299,7 +344,7 @@ fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
     }
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("Settings")
-        .inner_size(340.0, 150.0)
+        .inner_size(340.0, 190.0)
         .resizable(false)
         .decorations(false)
         .transparent(true)
@@ -311,6 +356,22 @@ fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
 const MENU_NEXT_WINDOW: &str = "next-window";
 const MENU_PREV_WINDOW: &str = "prev-window";
 const MENU_ARRANGE: &str = "arrange-windows";
+const MENU_OPEN: &str = "open-file";
+const MENU_REVEAL: &str = "reveal-in-finder";
+const MENU_OPEN_EDITOR: &str = "open-in-editor";
+const MENU_COPY_PATH: &str = "copy-path";
+
+/// File メニューの操作を、フォーカス中のウィンドウのフロントへ通知する
+/// （対象ファイルはフロントが保持しているため）。
+fn dispatch_menu_action(app: &AppHandle, action: &str) {
+    if let Some(w) = app
+        .webview_windows()
+        .values()
+        .find(|w| w.is_focused().unwrap_or(false))
+    {
+        let _ = w.emit("menu-action", action);
+    }
+}
 
 /// 開いているウィンドウを画面左上から行詰めでタイル配置する。
 fn arrange_windows(app: &AppHandle) {
@@ -499,7 +560,10 @@ pub fn run() {
             read_dataset,
             take_pending_file,
             mark_window_loaded,
-            report_panel_size
+            report_panel_size,
+            reveal_in_finder,
+            open_with_editor,
+            copy_path
         ])
         .setup(|app| {
             let handle = app.handle();
@@ -527,8 +591,35 @@ pub fn run() {
                 .separator()
                 .quit()
                 .build()?;
+            let open_file = MenuItem::with_id(handle, MENU_OPEN, "Open…", true, Some("CmdOrCtrl+O"))?;
+            let reveal = MenuItem::with_id(
+                handle,
+                MENU_REVEAL,
+                "Reveal in Finder",
+                true,
+                Some("CmdOrCtrl+F"),
+            )?;
+            let open_editor = MenuItem::with_id(
+                handle,
+                MENU_OPEN_EDITOR,
+                "Open in Editor",
+                true,
+                Some("CmdOrCtrl+E"),
+            )?;
+            let copy_path_item = MenuItem::with_id(
+                handle,
+                MENU_COPY_PATH,
+                "Copy Path",
+                true,
+                Some("CmdOrCtrl+Shift+C"),
+            )?;
             let file_menu = SubmenuBuilder::new(handle, "File")
                 .item(&new_window)
+                .item(&open_file)
+                .separator()
+                .item(&reveal)
+                .item(&open_editor)
+                .item(&copy_path_item)
                 .build()?;
             let next_window = MenuItem::with_id(
                 handle,
@@ -580,6 +671,10 @@ pub fn run() {
                     eprintln!("failed to open settings window: {err}");
                 }
             }
+            MENU_OPEN => dispatch_menu_action(app, "open"),
+            MENU_REVEAL => dispatch_menu_action(app, "reveal"),
+            MENU_OPEN_EDITOR => dispatch_menu_action(app, "editor"),
+            MENU_COPY_PATH => dispatch_menu_action(app, "copy-path"),
             _ => {}
         })
         .build(tauri::generate_context!())

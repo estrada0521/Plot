@@ -35,3 +35,10 @@ select.addEventListener("change", () => {
 onSystemThemeChange(() => {
   if (pref === "system") apply(pref);
 });
+
+// エディタ（⌘E で開くアプリ）
+const editorSelect = document.getElementById("editor-select") as HTMLSelectElement;
+editorSelect.value = localStorage.getItem("editor") ?? "";
+editorSelect.addEventListener("change", () => {
+  localStorage.setItem("editor", editorSelect.value);
+});

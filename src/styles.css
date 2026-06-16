@@ -302,7 +302,8 @@ body.window-blurred .title {
   font-size: var(--font-size-base);
 }
 
-.settings-row select {
+.settings-row select,
+.settings-row input {
   width: 150px;
   padding: 5px 9px;
   font: inherit;
@@ -313,7 +314,12 @@ body.window-blurred .title {
   cursor: pointer;
 }
 
-.settings-row select:focus {
+.settings-row input {
+  cursor: text;
+}
+
+.settings-row select:focus,
+.settings-row input:focus {
   outline: none;
 }
 
