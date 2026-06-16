@@ -7,8 +7,8 @@
     <link rel="stylesheet" href="/src/theme.css" />
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
-  <body class="filter-body">
-    <div class="filter-shell">
+  <body class="popup-body">
+    <div class="popup-shell">
       <header class="titlebar" data-tauri-drag-region>
         <div class="traffic">
           <button id="win-close" class="window-btn" title="閉じる" aria-label="閉じる">
@@ -18,10 +18,11 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 15.5h10" /></svg>
           </button>
         </div>
-        <span class="title">Filter</span>
+        <span class="title" id="filter-title">Filter</span>
       </header>
       <main class="filter-list" id="filter-list"></main>
       <footer class="filter-actions">
+        <button id="reset-btn" class="filter-btn filter-btn-reset">Reset</button>
         <button id="apply-btn" class="filter-btn filter-btn-primary">Apply</button>
         <button id="save-btn" class="filter-btn">Save…</button>
       </footer>

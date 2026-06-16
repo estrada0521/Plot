@@ -28,6 +28,7 @@ struct WindowMetrics(Mutex<HashMap<String, (f64, f64)>>);
 #[derive(Clone, Serialize)]
 struct FilterInit {
     source_label: String,
+    name: String,
     columns: Vec<String>,
 }
 #[derive(Default)]
@@ -396,11 +397,11 @@ fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
     }
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("Settings")
-        .inner_size(340.0, 190.0)
+        .inner_size(360.0, 156.0)
         .resizable(false)
         .decorations(false)
         .transparent(true)
-        .shadow(true)
+        .shadow(false)
         .focused(true)
         .build()?;
     Ok(())
@@ -411,6 +412,7 @@ fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
 fn open_filter_window(
     app: AppHandle,
     source_label: String,
+    name: String,
     columns: Vec<String>,
     inits: State<FilterInits>,
 ) -> Result<(), String> {
@@ -419,7 +421,8 @@ fn open_filter_window(
         m.insert(
             label.clone(),
             FilterInit {
-                source_label,
+                source_label: source_label.clone(),
+                name,
                 columns,
             },
         );
@@ -428,16 +431,23 @@ fn open_filter_window(
         let _ = w.set_focus();
         return Ok(());
     }
-    WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("filter.html".into()))
+    let win = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("filter.html".into()))
         .title("Filter")
-        .inner_size(380.0, 460.0)
-        .min_inner_size(300.0, 240.0)
+        .inner_size(240.0, 360.0)
+        .resizable(false)
         .decorations(false)
         .transparent(true)
-        .shadow(true)
+        .shadow(false)
         .focused(true)
         .build()
         .map_err(|e| e.to_string())?;
+    // フィルタウィンドウを閉じたら対象ウィンドウのフィルタを問答無用で解除する。
+    let app_for_event = app.clone();
+    win.on_window_event(move |event| {
+        if let tauri::WindowEvent::Destroyed = event {
+            let _ = app_for_event.emit_to(source_label.as_str(), "filter-reset", ());
+        }
+    });
     Ok(())
 }
 const MENU_NEXT_WINDOW: &str = "next-window";

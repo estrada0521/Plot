@@ -3,7 +3,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
-import { applyTheme, loadThemePref, onSystemThemeChange, saveThemePref, type ThemePref } from "./theme-util";
+import { applyTheme, bindThemeUpdates } from "./theme-util";
 import Plotly from "plotly.js-dist-min";
 
 interface Dataset {
@@ -62,24 +62,17 @@ pinBtn.addEventListener("click", async () => {
   () => appWindow.minimize(),
 );
 
-// 非フォーカス時はヘッダーのタイトルを薄く表示
+// --- テーマ適用（設定は別ウィンドウで変更し、イベントで反映） ---
+bindThemeUpdates();
+
+// 非フォーカス時はヘッダーのタイトルを薄く表示。
+// フォーカス取得時にもテーマを再適用し、万一の取りこぼしを補正する。
 appWindow
   .onFocusChanged(({ payload: focused }) => {
     document.body.classList.toggle("window-blurred", !focused);
+    if (focused) applyTheme();
   })
   .catch(() => {});
-
-// --- テーマ適用（設定は別ウィンドウで変更し、イベントで反映） ---
-let themePref: ThemePref = loadThemePref();
-applyTheme(themePref);
-onSystemThemeChange(() => {
-  if (themePref === "system") applyTheme(themePref);
-});
-listen<ThemePref>("theme-changed", (e) => {
-  themePref = e.payload;
-  saveThemePref(themePref);
-  applyTheme(themePref);
-}).catch(() => {});
 
 let current: Dataset | null = null;
 let currentPath: string | null = null;
@@ -121,6 +114,12 @@ listen<FilterRule[]>(
   },
   { target: appWindow.label },
 ).catch(() => {});
+
+// filter ウィンドウが閉じられたら問答無用でフィルタ解除（元データ全体に戻す）。
+listen("filter-reset", () => {
+  activeFilter = [];
+  if (current) render();
+}, { target: appWindow.label }).catch(() => {});
 
 // filter ウィンドウからの保存要求。フィルタ後データを新規 CSV として保存（元ファイルは不変）。
 // 自ウィンドウ宛て（emitTo）のみ受信。
@@ -264,6 +263,7 @@ function menuAction(action: string) {
   if (action === "filter") {
     invoke("open_filter_window", {
       sourceLabel: appWindow.label,
+      name: current.display_name ?? current.name,
       columns: current.columns,
     }).catch(fail);
   } else if (action === "reveal") {

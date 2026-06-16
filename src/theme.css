@@ -7,9 +7,13 @@
   --color-border: rgba(0, 0, 0, 0.15);
   --color-text: rgb(11, 11, 11);
   --color-chrome-text: rgb(11, 11, 11);
-  --color-text-muted: rgb(110, 110, 108);
+  --color-text-muted: rgba(20, 24, 22, 0.62);
   --color-text-disabled: rgb(165, 165, 165);
-  --color-glass-surface: rgba(235, 235, 233, 0.92);
+  --color-glass-surface: rgba(235, 235, 233, 0.75);
+  /* ポップアップ（設定/フィルタ）本体。plot と違い chrome 同様にダーク化する。 */
+  --color-popup-surface: rgb(253, 253, 252);
+  /* select/入力などコントロールの背景（LabApp-2 のネイティブ select に合わせる）。 */
+  --color-control-surface: rgb(235, 235, 233);
   --color-glass-highlight: rgba(255, 255, 255, 0.9);
   --color-glass-edge: rgba(255, 255, 255, 0.62);
   --color-glass-shadow: rgba(0, 0, 0, 0.11);
@@ -18,12 +22,9 @@
   --color-plot-line: rgb(11, 11, 11);
   --color-plot-frame: rgb(11, 11, 11);
 
-  /* フォント (Agent-Window の preset-gothic = sans_stack と同一) */
-  --font-family: "anthropicSans", "Anthropic Sans", "SF Pro Text", "Segoe UI",
-    "Hiragino Sans", "Yu Gothic", Meiryo, "Noto Sans CJK JP", "PingFang TC",
-    "Microsoft JhengHei", "Noto Sans CJK TC", "PingFang SC", "Microsoft YaHei",
-    "Noto Sans CJK SC", "Apple SD Gothic Neo", "Malgun Gothic",
-    "Noto Sans CJK KR", sans-serif;
+  /* フォント (LabApp-2 と統一: システムフォント = SF) */
+  --font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic",
+    "Noto Sans CJK JP", sans-serif;
   --font-size-base: 13px;
 
   /* 余白・寸法 */
@@ -56,10 +57,12 @@ html[data-theme="dark"] {
   --color-surface-center: rgb(14, 14, 13);
   --color-surface-edge: rgb(10, 10, 9);
   --color-border: rgb(13, 13, 12);
-  --color-chrome-text: rgb(236, 236, 236);
-  --color-text-muted: rgb(150, 150, 150);
+  --color-chrome-text: rgba(245, 245, 242, 0.92);
+  --color-text-muted: rgba(245, 245, 242, 0.58);
   --color-text-disabled: rgb(105, 105, 105);
-  --color-glass-surface: rgba(18, 18, 17, 0.92);
+  --color-popup-surface: rgb(18, 18, 17);
+  --color-control-surface: rgb(47, 47, 47);
+  --color-glass-surface: rgba(18, 18, 17, 0.75);
   --color-glass-highlight: rgba(255, 255, 255, 0.06);
   --color-glass-edge: rgba(255, 255, 255, 0.10);
   --color-glass-shadow: rgba(0, 0, 0, 0.55);

@@ -1,13 +1,5 @@
-import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import {
-  applyTheme,
-  loadThemePref,
-  onSystemThemeChange,
-  resolveTheme,
-  saveThemePref,
-  type ThemePref,
-} from "./theme-util";
+import { bindThemeUpdates, loadThemePref, setThemePref, type ThemePref } from "./theme-util";
 
 const win = getCurrentWindow();
 
@@ -15,25 +7,12 @@ const win = getCurrentWindow();
 document.getElementById("win-close")?.addEventListener("click", () => win.close());
 document.getElementById("win-min")?.addEventListener("click", () => win.minimize());
 
-function apply(pref: ThemePref) {
-  applyTheme(pref);
-  win.setTheme(resolveTheme(pref)).catch(() => {});
-}
-
-let pref = loadThemePref();
-apply(pref);
+bindThemeUpdates();
 
 const select = document.getElementById("theme-select") as HTMLSelectElement;
-select.value = pref;
+select.value = loadThemePref();
 select.addEventListener("change", () => {
-  pref = select.value as ThemePref;
-  saveThemePref(pref);
-  apply(pref);
-  emit("theme-changed", pref).catch(() => {});
-});
-
-onSystemThemeChange(() => {
-  if (pref === "system") apply(pref);
+  setThemePref(select.value as ThemePref);
 });
 
 // エディタ（⌘E で開くアプリ）

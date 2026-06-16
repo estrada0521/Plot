@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo, listen } from "@tauri-apps/api/event";
+import { emitTo } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { applyTheme, loadThemePref, onSystemThemeChange, type ThemePref } from "./theme-util";
+import { applyTheme, bindThemeUpdates } from "./theme-util";
 
 interface FilterInit {
   source_label: string;
+  name: string;
   columns: string[];
 }
 interface FilterRule {
@@ -20,19 +21,15 @@ document.getElementById("win-close")?.addEventListener("click", () => win.close(
 document.getElementById("win-min")?.addEventListener("click", () => win.minimize());
 
 // テーマ（設定ウィンドウからのイベントに追従）
-let themePref: ThemePref = loadThemePref();
-applyTheme(themePref);
-onSystemThemeChange(() => {
-  if (themePref === "system") applyTheme(themePref);
-});
-listen<ThemePref>("theme-changed", (e) => {
-  themePref = e.payload;
-  applyTheme(themePref);
+bindThemeUpdates();
+win.onFocusChanged(({ payload: focused }) => {
+  if (focused) applyTheme();
 }).catch(() => {});
 
 const listEl = document.getElementById("filter-list") as HTMLDivElement;
 const applyBtn = document.getElementById("apply-btn") as HTMLButtonElement;
 const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
+const resetBtn = document.getElementById("reset-btn") as HTMLButtonElement;
 
 let sourceLabel = "";
 const minInputs: HTMLInputElement[] = [];
@@ -57,21 +54,10 @@ function buildRow(name: string, index: number) {
   maxInput.className = "filter-input";
   maxInput.placeholder = "max";
 
-  const reset = document.createElement("button");
-  reset.className = "filter-reset";
-  reset.title = "リセット";
-  reset.setAttribute("aria-label", "リセット");
-  reset.innerHTML =
-    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12a7 7 0 1 1 2 4.9M5 17v-3.5h3.5" /></svg>';
-  reset.addEventListener("click", () => {
-    minInput.value = "";
-    maxInput.value = "";
-  });
-
   minInputs[index] = minInput;
   maxInputs[index] = maxInput;
 
-  row.append(label, minInput, maxInput, reset);
+  row.append(label, minInput, maxInput);
   listEl.appendChild(row);
 }
 
@@ -95,6 +81,13 @@ applyBtn.addEventListener("click", () => {
   emitTo(sourceLabel, "filter-apply", collectRules()).catch(() => {});
 });
 
+// 全体リセット: 全列の入力をクリアし、プロットも元データ全体に戻す。
+resetBtn.addEventListener("click", () => {
+  minInputs.forEach((i) => (i.value = ""));
+  maxInputs.forEach((i) => (i.value = ""));
+  if (sourceLabel) emitTo(sourceLabel, "filter-apply", []).catch(() => {});
+});
+
 function requestSave() {
   if (!sourceLabel) return;
   emitTo(sourceLabel, "filter-save", {}).catch(() => {});
@@ -107,8 +100,12 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+const titleEl = document.getElementById("filter-title") as HTMLSpanElement;
+
 invoke<FilterInit | null>("take_filter_init").then((init) => {
   if (!init) return;
   sourceLabel = init.source_label;
+  titleEl.textContent = `Filter — ${init.name}`;
+  titleEl.title = init.name;
   init.columns.forEach((name, i) => buildRow(name, i));
 });
