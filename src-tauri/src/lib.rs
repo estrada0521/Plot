@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::{
     AppHandle, Emitter, LogicalPosition, Manager, State, WebviewUrl, WebviewWindowBuilder,
@@ -316,6 +316,37 @@ fn open_with_editor(path: String, editor: String) -> Result<(), String> {
     cmd.spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// パネル領域（ヘッダー＋プロット）を画面からキャプチャし Downloads に PNG 保存。
+/// 引数は論理座標（左上原点, points）と寸法。
+#[tauri::command]
+fn save_panel_image(x: f64, y: f64, w: f64, h: f64, name: String) -> Result<String, String> {
+    let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let safe: String = name
+        .chars()
+        .map(|c| if c == '/' || c == ':' { '_' } else { c })
+        .collect();
+    let file = format!("{home}/Downloads/{safe}-{ts}.png");
+    let rect = format!(
+        "{},{},{},{}",
+        x.round() as i64,
+        y.round() as i64,
+        w.round() as i64,
+        h.round() as i64
+    );
+    let status = Command::new("screencapture")
+        .args(["-x", "-R", &rect, &file])
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("screencapture に失敗しました".into());
+    }
+    Ok(file)
+}
+
 /// 対象ファイルのパスをクリップボードへコピー（pbcopy）。
 #[tauri::command]
 fn copy_path(text: String) -> Result<(), String> {
@@ -563,7 +594,8 @@ pub fn run() {
             report_panel_size,
             reveal_in_finder,
             open_with_editor,
-            copy_path
+            copy_path,
+            save_panel_image
         ])
         .setup(|app| {
             let handle = app.handle();

@@ -212,6 +212,35 @@ function menuAction(action: string) {
 }
 listen<string>("menu-action", (e) => menuAction(e.payload)).catch(() => {});
 
+// パネル（ヘッダー＋プロット）を Downloads に画像保存
+async function savePanel() {
+  if (!current) return;
+  try {
+    const pos = await appWindow.outerPosition();
+    const sf = await appWindow.scaleFactor();
+    const base = (current.display_name ?? current.name).replace(/\.[^.]+$/, "");
+    await invoke("save_panel_image", {
+      x: pos.x / sf,
+      y: pos.y / sf,
+      w: panelEl.offsetWidth,
+      h: panelEl.offsetHeight,
+      name: base,
+    });
+  } catch {
+    // 保存失敗時も footer にはメッセージを出さない。
+  }
+}
+(document.getElementById("save-btn") as HTMLButtonElement).addEventListener(
+  "click",
+  () => savePanel(),
+);
+window.addEventListener("keydown", (e) => {
+  if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "s") {
+    e.preventDefault();
+    savePanel();
+  }
+});
+
 async function loadDataset(path: string) {
   statusEl.textContent = "";
   try {
