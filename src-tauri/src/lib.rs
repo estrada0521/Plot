@@ -24,6 +24,15 @@ struct LoadedWindows(Mutex<HashSet<String>>);
 #[derive(Default)]
 struct WindowMetrics(Mutex<HashMap<String, (f64, f64)>>);
 
+/// フィルタウィンドウの初期データ（対象ウィンドウ label と列一覧）。
+#[derive(Clone, Serialize)]
+struct FilterInit {
+    source_label: String,
+    columns: Vec<String>,
+}
+#[derive(Default)]
+struct FilterInits(Mutex<HashMap<String, FilterInit>>);
+
 /// フロントが plot パネルのサイズを報告する（リサイズ毎）。
 #[tauri::command]
 fn report_panel_size(window: tauri::Window, width: f64, height: f64, metrics: State<WindowMetrics>) {
@@ -46,6 +55,18 @@ fn mark_window_loaded(window: tauri::Window, loaded: State<LoadedWindows>) {
     if let Ok(mut s) = loaded.0.lock() {
         s.insert(window.label().to_string());
     }
+}
+
+/// フィルタウィンドウが起動直後に呼び、対象ウィンドウ label と列一覧を受け取る。
+#[tauri::command]
+fn take_filter_init(window: tauri::Window, inits: State<FilterInits>) -> Option<FilterInit> {
+    inits.0.lock().ok()?.get(window.label()).cloned()
+}
+
+/// テキスト（CSV）を指定パスへ新規保存する。元データには触れない。
+#[tauri::command]
+fn write_text_file(path: String, content: String) -> Result<(), String> {
+    fs::write(&path, content).map_err(|e| e.to_string())
 }
 
 fn close_empty_main_window(app: &AppHandle) {
@@ -384,6 +405,41 @@ fn open_settings_window(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
     Ok(())
 }
+
+/// 対象ウィンドウ（source_label）に紐づくフィルタウィンドウを開く（既にあれば前面化）。
+#[tauri::command]
+fn open_filter_window(
+    app: AppHandle,
+    source_label: String,
+    columns: Vec<String>,
+    inits: State<FilterInits>,
+) -> Result<(), String> {
+    let label = format!("filter-{source_label}");
+    if let Ok(mut m) = inits.0.lock() {
+        m.insert(
+            label.clone(),
+            FilterInit {
+                source_label,
+                columns,
+            },
+        );
+    }
+    if let Some(w) = app.get_webview_window(&label) {
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("filter.html".into()))
+        .title("Filter")
+        .inner_size(380.0, 460.0)
+        .min_inner_size(300.0, 240.0)
+        .decorations(false)
+        .transparent(true)
+        .shadow(true)
+        .focused(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
 const MENU_NEXT_WINDOW: &str = "next-window";
 const MENU_PREV_WINDOW: &str = "prev-window";
 const MENU_ARRANGE: &str = "arrange-windows";
@@ -391,6 +447,7 @@ const MENU_OPEN: &str = "open-file";
 const MENU_REVEAL: &str = "reveal-in-finder";
 const MENU_OPEN_EDITOR: &str = "open-in-editor";
 const MENU_COPY_PATH: &str = "copy-path";
+const MENU_FILTER: &str = "filter-data";
 
 /// File メニューの操作を、フォーカス中のウィンドウのフロントへ通知する
 /// （対象ファイルはフロントが保持しているため）。
@@ -400,7 +457,8 @@ fn dispatch_menu_action(app: &AppHandle, action: &str) {
         .values()
         .find(|w| w.is_focused().unwrap_or(false))
     {
-        let _ = w.emit("menu-action", action);
+        // emit はブロードキャストのため、フォーカス中ウィンドウのみに届くよう emit_to を使う。
+        let _ = app.emit_to(w.label(), "menu-action", action);
     }
 }
 
@@ -587,6 +645,7 @@ pub fn run() {
         .manage(PendingFiles::default())
         .manage(LoadedWindows::default())
         .manage(WindowMetrics::default())
+        .manage(FilterInits::default())
         .invoke_handler(tauri::generate_handler![
             read_dataset,
             take_pending_file,
@@ -595,7 +654,10 @@ pub fn run() {
             reveal_in_finder,
             open_with_editor,
             copy_path,
-            save_panel_image
+            save_panel_image,
+            open_filter_window,
+            take_filter_init,
+            write_text_file
         ])
         .setup(|app| {
             let handle = app.handle();
@@ -643,7 +705,14 @@ pub fn run() {
                 MENU_COPY_PATH,
                 "Copy Path",
                 true,
-                Some("CmdOrCtrl+Shift+C"),
+                Some("CmdOrCtrl+P"),
+            )?;
+            let filter_item = MenuItem::with_id(
+                handle,
+                MENU_FILTER,
+                "Filter…",
+                true,
+                Some("CmdOrCtrl+Alt+F"),
             )?;
             let file_menu = SubmenuBuilder::new(handle, "File")
                 .item(&new_window)
@@ -652,6 +721,8 @@ pub fn run() {
                 .item(&reveal)
                 .item(&open_editor)
                 .item(&copy_path_item)
+                .separator()
+                .item(&filter_item)
                 .build()?;
             let next_window = MenuItem::with_id(
                 handle,
@@ -707,6 +778,7 @@ pub fn run() {
             MENU_REVEAL => dispatch_menu_action(app, "reveal"),
             MENU_OPEN_EDITOR => dispatch_menu_action(app, "editor"),
             MENU_COPY_PATH => dispatch_menu_action(app, "copy-path"),
+            MENU_FILTER => dispatch_menu_action(app, "filter"),
             _ => {}
         })
         .build(tauri::generate_context!())

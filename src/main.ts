@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
@@ -85,6 +85,68 @@ let current: Dataset | null = null;
 let currentPath: string | null = null;
 let dragmode: "zoom" | "pan" = "zoom";
 let plotMode: "lines" | "markers" = "lines";
+
+// データフィルタ（filter ウィンドウから適用）。列インデックスごとの min/max。
+// 元データ（current.rows）は不変。描画/保存時にこの規則で行を絞り込むだけ。
+interface FilterRule {
+  col: number;
+  min: number | null;
+  max: number | null;
+}
+let activeFilter: FilterRule[] = [];
+
+function getFilteredRows(): (number | null)[][] {
+  if (!current) return [];
+  const rules = activeFilter.filter((f) => f.min !== null || f.max !== null);
+  if (!rules.length) return current.rows;
+  return current.rows.filter((r) =>
+    rules.every((f) => {
+      const v = r[f.col];
+      // 制約をかけた列が欠損(null/NaN)の行は除外
+      if (v === null || v === undefined || Number.isNaN(v)) return false;
+      if (f.min !== null && v < f.min) return false;
+      if (f.max !== null && v > f.max) return false;
+      return true;
+    }),
+  );
+}
+
+// filter ウィンドウからの適用要求。元データには触れず描画のみ更新（軸は再フィット）。
+// 自ウィンドウ宛て（emitTo）のみ受信するよう target を限定する。
+listen<FilterRule[]>(
+  "filter-apply",
+  (e) => {
+    activeFilter = Array.isArray(e.payload) ? e.payload : [];
+    if (current) render();
+  },
+  { target: appWindow.label },
+).catch(() => {});
+
+// filter ウィンドウからの保存要求。フィルタ後データを新規 CSV として保存（元ファイルは不変）。
+// 自ウィンドウ宛て（emitTo）のみ受信。
+listen("filter-save", async () => {
+  if (!current) return;
+  const rows = getFilteredRows();
+  const fmt = (v: number | null) =>
+    v === null || v === undefined || Number.isNaN(v) ? "" : String(v);
+  const csv =
+    current.columns.join(",") +
+    "\n" +
+    rows.map((r) => r.map(fmt).join(",")).join("\n") +
+    "\n";
+  const base = (current.display_name ?? current.name).replace(/\.[^.]+$/, "");
+  try {
+    const path = await save({
+      defaultPath: `${base}-filtered.csv`,
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    });
+    if (typeof path === "string") {
+      await invoke("write_text_file", { path, content: csv });
+    }
+  } catch (err) {
+    statusEl.textContent = `エラー: ${err}`;
+  }
+}, { target: appWindow.label }).catch(() => {});
 
 const panelEl = document.getElementById("panel") as HTMLDivElement;
 const footerEl = document.querySelector(".toolbar") as HTMLElement;
@@ -195,11 +257,16 @@ function menuAction(action: string) {
     openBtn.click();
     return;
   }
-  if (!currentPath) return;
+  if (!currentPath || !current) return;
   const fail = (err: unknown) => {
     statusEl.textContent = `エラー: ${err}`;
   };
-  if (action === "reveal") {
+  if (action === "filter") {
+    invoke("open_filter_window", {
+      sourceLabel: appWindow.label,
+      columns: current.columns,
+    }).catch(fail);
+  } else if (action === "reveal") {
     invoke("reveal_in_finder", { path: currentPath }).catch(fail);
   } else if (action === "editor") {
     invoke("open_with_editor", {
@@ -210,7 +277,11 @@ function menuAction(action: string) {
     invoke("copy_path", { text: currentPath }).catch(fail);
   }
 }
-listen<string>("menu-action", (e) => menuAction(e.payload)).catch(() => {});
+// このウィンドウ宛て（emit_to）のメニュー操作だけを受け取る。
+// グローバル listen は target=Any で全イベントを拾ってしまうため自ウィンドウに限定する。
+listen<string>("menu-action", (e) => menuAction(e.payload), { target: appWindow.label }).catch(
+  () => {},
+);
 
 // パネル（ヘッダー＋プロット）を Downloads に画像保存
 async function savePanel() {
@@ -523,8 +594,9 @@ function render() {
   if (!current) return;
   const xi = Number(xSelect.value);
   const yi = Number(ySelect.value);
-  const x = current.rows.map((r) => r[xi]);
-  const y = current.rows.map((r) => r[yi]);
+  const rows = getFilteredRows();
+  const x = rows.map((r) => r[xi]);
+  const y = rows.map((r) => r[yi]);
 
   const lineColor = themeVar("--color-plot-line");
   const frameColor = themeVar("--color-plot-frame");
