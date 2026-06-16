@@ -9,9 +9,6 @@
   --color-chrome-text: rgb(11, 11, 11);
   --color-text-muted: rgb(110, 110, 108);
   --color-text-disabled: rgb(165, 165, 165);
-  --color-accent: #0a84ff;
-  --color-accent-text: #ffffff;
-  --color-highlight: rgb(176, 32, 32);
   --color-glass-surface: rgba(235, 235, 233, 0.92);
   --color-glass-highlight: rgba(255, 255, 255, 0.9);
   --color-glass-edge: rgba(255, 255, 255, 0.62);
@@ -20,7 +17,6 @@
   /* グラフ */
   --color-plot-line: rgb(11, 11, 11);
   --color-plot-frame: rgb(11, 11, 11);
-  --border-width: 0px;
 
   /* フォント (Agent-Window の preset-gothic = sans_stack と同一) */
   --font-family: "anthropicSans", "Anthropic Sans", "SF Pro Text", "Segoe UI",
@@ -33,10 +29,8 @@
   /* 余白・寸法 */
   --space-sm: 6px;
   --space-md: 12px;
-  --panel-header-gap: 0px;
   --panel-footer-gap: 6px;
   --toolbar-height: 32px;
-  --toolbar-max-width: 460px;
   --titlebar-height: 28px;
   --window-btn-size: 18px;
   --window-icon-size: 13px;
@@ -61,7 +55,7 @@ html[data-theme="dark"] {
   --color-surface: rgb(17, 17, 16);
   --color-surface-center: rgb(14, 14, 13);
   --color-surface-edge: rgb(10, 10, 9);
-  --color-border: rgba(255, 255, 255, 0.14);
+  --color-border: rgb(13, 13, 12);
   --color-chrome-text: rgb(236, 236, 236);
   --color-text-muted: rgb(150, 150, 150);
   --color-text-disabled: rgb(105, 105, 105);

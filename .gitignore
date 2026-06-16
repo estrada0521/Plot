@@ -8,3 +8,4 @@ app-icon.png
 # ローカル/ハーネス
 .claude/settings.local.json
 .agent-window/
+icon-candidates/
