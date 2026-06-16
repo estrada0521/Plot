@@ -165,8 +165,6 @@ body.window-blurred .title {
     inset 0 1px 0 var(--color-glass-highlight),
     inset 0 -1px 0 var(--color-glass-edge);
   overflow: visible;
-  -webkit-backdrop-filter: blur(20px) saturate(1.25);
-  backdrop-filter: blur(20px) saturate(1.25);
 }
 
 .toolbar > *,
@@ -332,7 +330,8 @@ body.window-blurred .title {
   overflow-y: auto;
   /* 長くてもスクロールバーは出さない（ホイールでのスクロールは可能） */
   scrollbar-width: none;
-  padding: 6px 12px;
+  /* 上・右は余白なし（入力とハイライトを端まで）。左は列名のためのインセットのみ。 */
+  padding: 0 0 6px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -346,31 +345,37 @@ body.window-blurred .title {
 
 .filter-col-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 58px 58px;
-  align-items: center;
-  gap: 5px;
+  grid-template-columns: minmax(0, 1fr) 84px 84px;
+  align-items: stretch;
+  gap: 0;
   min-height: 28px;
 }
 
 .filter-col-name {
+  display: flex;
+  align-items: center;
+  padding-right: 8px;
   color: var(--color-chrome-text);
   font-size: var(--font-size-base);
-  line-height: 18px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* min/max は Apply/Save と同じく塗りなし・余白詰め・hover/focus でハイライト。 */
 .filter-input {
   width: 100%;
-  padding: 3px 6px;
+  height: 100%;
+  padding: 0 6px;
   font: inherit;
+  text-align: left;
   color: var(--color-chrome-text);
-  background: var(--color-control-surface);
+  background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: 0;
   -moz-appearance: textfield;
   appearance: textfield;
+  transition: background-color 0.12s ease;
 }
 
 /* 数値スピナー（上下トグル）を非表示 */
@@ -380,7 +385,13 @@ body.window-blurred .title {
   margin: 0;
 }
 
+.filter-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.filter-input:hover,
 .filter-input:focus {
+  background: var(--color-header-button-hover);
   outline: none;
 }
 

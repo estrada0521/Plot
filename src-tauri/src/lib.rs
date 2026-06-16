@@ -431,16 +431,26 @@ fn open_filter_window(
         let _ = w.set_focus();
         return Ok(());
     }
-    let win = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("filter.html".into()))
+    // 対象（フォーカス中）ウィンドウの右下へ少しずらして表示する。
+    const OFFSET: f64 = 28.0;
+    let near = app.get_webview_window(&source_label).and_then(|w| {
+        let sf = w.scale_factor().ok()?;
+        let p = w.outer_position().ok()?.to_logical::<f64>(sf);
+        Some((p.x + OFFSET, p.y + OFFSET))
+    });
+    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("filter.html".into()))
         .title("Filter")
-        .inner_size(240.0, 360.0)
-        .resizable(false)
+        .inner_size(300.0, 360.0)
+        .min_inner_size(220.0, 200.0)
+        .resizable(true)
         .decorations(false)
         .transparent(true)
         .shadow(false)
-        .focused(true)
-        .build()
-        .map_err(|e| e.to_string())?;
+        .focused(true);
+    if let Some((x, y)) = near {
+        builder = builder.position(x, y);
+    }
+    let win = builder.build().map_err(|e| e.to_string())?;
     // フィルタウィンドウを閉じたら対象ウィンドウのフィルタを問答無用で解除する。
     let app_for_event = app.clone();
     win.on_window_event(move |event| {
@@ -762,9 +772,22 @@ pub fn run() {
                 .item(&prev_window)
                 .item(&arrange)
                 .build()?;
+            // 標準の Edit メニュー（⌘A 全選択 / ⌘C / ⌘V / ⌘X / ⌘Z / ⇧⌘Z）。
+            // カスタムメニューが既定メニューを置き換えるため、これが無いと入力欄で
+            // selectAll/copy/paste 等の標準ショートカットが効かなくなる。
+            let edit_menu = SubmenuBuilder::new(handle, "Edit")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
+                .build()?;
             let menu = MenuBuilder::new(handle)
                 .item(&app_menu)
                 .item(&file_menu)
+                .item(&edit_menu)
                 .item(&window_menu)
                 .build()?;
             app.set_menu(menu)?;

@@ -9,11 +9,11 @@
   --color-chrome-text: rgb(11, 11, 11);
   --color-text-muted: rgba(20, 24, 22, 0.62);
   --color-text-disabled: rgb(165, 165, 165);
-  --color-glass-surface: rgba(235, 235, 233, 0.75);
+  --color-glass-surface: rgba(235, 235, 233, 0.88);
   /* ポップアップ（設定/フィルタ）本体。plot と違い chrome 同様にダーク化する。 */
   --color-popup-surface: rgb(253, 253, 252);
-  /* select/入力などコントロールの背景（LabApp-2 のネイティブ select に合わせる）。 */
-  --color-control-surface: rgb(235, 235, 233);
+  /* select/入力などコントロールの背景（B をわずかに弱めた暖色寄り）。 */
+  --color-control-surface: rgb(236, 236, 233);
   --color-glass-highlight: rgba(255, 255, 255, 0.9);
   --color-glass-edge: rgba(255, 255, 255, 0.62);
   --color-glass-shadow: rgba(0, 0, 0, 0.11);
@@ -61,8 +61,8 @@ html[data-theme="dark"] {
   --color-text-muted: rgba(245, 245, 242, 0.58);
   --color-text-disabled: rgb(105, 105, 105);
   --color-popup-surface: rgb(18, 18, 17);
-  --color-control-surface: rgb(47, 47, 47);
-  --color-glass-surface: rgba(18, 18, 17, 0.75);
+  --color-control-surface: rgb(49, 49, 46);
+  --color-glass-surface: rgba(18, 18, 17, 0.88);
   --color-glass-highlight: rgba(255, 255, 255, 0.06);
   --color-glass-edge: rgba(255, 255, 255, 0.10);
   --color-glass-shadow: rgba(0, 0, 0, 0.55);
