@@ -4,6 +4,11 @@ A lightweight launcher-style macOS app that simply graphs array data such as csv
 
 [日本語版 README](README_jp.md)
 
+<p align="center">
+  <img src="images/light.png" width="49%">
+  <img src="images/dark.png" width="49%">
+</p>
+
 ## Keyboard Shortcuts
 
 - Open — `⌘O`

@@ -2,6 +2,11 @@
 
 csv / dat / ras / SPEC txt 等の配列データをグラフ表示するだけの軽量 Launcher Service アプリです。
 
+<p align="center">
+  <img src="images/light.png" width="49%">
+  <img src="images/dark.png" width="49%">
+</p>
+
 ## Keyboard Shortcuts
 
 - 開く — `⌘O`
