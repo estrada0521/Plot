@@ -464,6 +464,7 @@ fn open_filter_window(
 const MENU_NEXT_WINDOW: &str = "next-window";
 const MENU_PREV_WINDOW: &str = "prev-window";
 const MENU_ARRANGE: &str = "arrange-windows";
+const MENU_CASCADE: &str = "cascade-windows";
 const MENU_OPEN: &str = "open-file";
 const MENU_REVEAL: &str = "reveal-in-finder";
 const MENU_OPEN_EDITOR: &str = "open-in-editor";
@@ -584,6 +585,37 @@ fn arrange_windows(app: &AppHandle) {
             }
         }
         x += unit_w + gap;
+    }
+}
+
+/// 開いているウィンドウを画面左上から斜めにカスケード配置する（⌘N と同じ 28px ずらし）。
+fn cascade_windows(app: &AppHandle) {
+    let mut wins: Vec<_> = app.webview_windows().into_iter().collect();
+    if wins.is_empty() {
+        return;
+    }
+    wins.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let (area_x, area_y) = wins[0]
+        .1
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .map(|m| {
+            let s = m.scale_factor();
+            let p = m.position().to_logical::<f64>(s);
+            (p.x, p.y)
+        })
+        .unwrap_or((0.0, 0.0));
+
+    const OFFSET: f64 = 28.0;
+    let base_x = area_x + 12.0;
+    let base_y = area_y + 28.0; // メニューバー分
+    for (i, (_label, w)) in wins.iter().enumerate() {
+        let d = OFFSET * i as f64;
+        let _ = w.set_position(LogicalPosition::new(base_x + d, base_y + d));
+        // 後のウィンドウほど手前に来るように順に前面化する。
+        let _ = w.set_focus();
     }
 }
 
@@ -815,12 +847,20 @@ pub fn run() {
                 true,
                 Some("CmdOrCtrl+Alt+A"),
             )?;
+            let cascade = MenuItem::with_id(
+                handle,
+                MENU_CASCADE,
+                "Cascade Windows",
+                true,
+                Some("CmdOrCtrl+Shift+Alt+A"),
+            )?;
             let window_menu = SubmenuBuilder::new(handle, "Window")
                 .minimize()
                 .separator()
                 .item(&next_window)
                 .item(&prev_window)
                 .item(&arrange)
+                .item(&cascade)
                 .build()?;
             // 標準の Edit メニュー（⌘A 全選択 / ⌘C / ⌘V / ⌘Z / ⇧⌘Z）。
             // カスタムメニューが既定メニューを置き換えるため、これが無いと入力欄で
@@ -853,6 +893,7 @@ pub fn run() {
             MENU_NEXT_WINDOW => cycle_windows(app, true),
             MENU_PREV_WINDOW => cycle_windows(app, false),
             MENU_ARRANGE => arrange_windows(app),
+            MENU_CASCADE => cascade_windows(app),
             MENU_SETTINGS => {
                 if let Err(err) = open_settings_window(app) {
                     eprintln!("failed to open settings window: {err}");
