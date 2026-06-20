@@ -16,6 +16,20 @@ use tauri::{
 #[derive(Default)]
 struct PendingFiles(Mutex<HashMap<String, String>>);
 
+/// 複製ウィンドウへ引き継ぐ表示状態（label → init）。
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DuplicateInit {
+    x_index: usize,
+    y_index: usize,
+    panel_width: f64,
+    panel_height: f64,
+    plot_mode: String,
+    dragmode: String,
+}
+#[derive(Default)]
+struct DuplicateInits(Mutex<HashMap<String, DuplicateInit>>);
+
 /// データを読み込んだ（＝空でない）ウィンドウの label 集合。
 #[derive(Default)]
 struct LoadedWindows(Mutex<HashSet<String>>);
@@ -48,6 +62,12 @@ static WIN_SEQ: AtomicU64 = AtomicU64::new(0);
 #[tauri::command]
 fn take_pending_file(window: tauri::Window, pending: State<PendingFiles>) -> Option<String> {
     pending.0.lock().ok()?.remove(window.label())
+}
+
+/// 複製ウィンドウが起動直後に呼び、引き継ぐ表示状態を受け取る。
+#[tauri::command]
+fn take_duplicate_init(window: tauri::Window, inits: State<DuplicateInits>) -> Option<DuplicateInit> {
+    inits.0.lock().ok()?.remove(window.label())
 }
 
 /// フロントがデータ読み込み成功時に呼び、自ウィンドウを「空でない」と記録する。
@@ -387,6 +407,7 @@ fn copy_path(text: String) -> Result<(), String> {
 }
 
 const MENU_NEW_WINDOW: &str = "new-window";
+const MENU_DUPLICATE_WINDOW: &str = "duplicate-window";
 const MENU_SETTINGS: &str = "settings";
 
 /// 設定ウィンドウを開く（既にあれば前面化＝シングルトン）。
@@ -640,7 +661,11 @@ fn cycle_windows(app: &AppHandle, forward: bool) {
 }
 
 /// 新規ウィンドウを生成する。pending_path があればそのファイルを開くよう保管する。
-fn spawn_window(app: &AppHandle, pending_path: Option<&str>) -> tauri::Result<()> {
+fn spawn_window(
+    app: &AppHandle,
+    pending_path: Option<&str>,
+    duplicate_init: Option<DuplicateInit>,
+) -> tauri::Result<()> {
     let n = WIN_SEQ.fetch_add(1, Ordering::Relaxed);
     let label = format!("plot-{n}");
 
@@ -648,6 +673,13 @@ fn spawn_window(app: &AppHandle, pending_path: Option<&str>) -> tauri::Result<()
         if let Some(state) = app.try_state::<PendingFiles>() {
             if let Ok(mut m) = state.0.lock() {
                 m.insert(label.clone(), p.to_string());
+            }
+        }
+    }
+    if let Some(init) = duplicate_init {
+        if let Some(state) = app.try_state::<DuplicateInits>() {
+            if let Ok(mut m) = state.0.lock() {
+                m.insert(label.clone(), init);
             }
         }
     }
@@ -681,7 +713,29 @@ fn spawn_window(app: &AppHandle, pending_path: Option<&str>) -> tauri::Result<()
 }
 
 fn create_plot_window(app: &AppHandle) -> tauri::Result<()> {
-    spawn_window(app, None)
+    spawn_window(app, None, None)
+}
+
+#[tauri::command]
+fn duplicate_plot_window(
+    app: AppHandle,
+    path: String,
+    x_index: usize,
+    y_index: usize,
+    panel_width: f64,
+    panel_height: f64,
+    plot_mode: String,
+    dragmode: String,
+) -> Result<(), String> {
+    let init = DuplicateInit {
+        x_index,
+        y_index,
+        panel_width,
+        panel_height,
+        plot_mode,
+        dragmode,
+    };
+    spawn_window(&app, Some(&path), Some(init)).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -745,12 +799,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(PendingFiles::default())
+        .manage(DuplicateInits::default())
         .manage(LoadedWindows::default())
         .manage(WindowMetrics::default())
         .manage(FilterInits::default())
         .invoke_handler(tauri::generate_handler![
             read_dataset,
             take_pending_file,
+            take_duplicate_init,
             mark_window_loaded,
             report_panel_size,
             reveal_in_finder,
@@ -759,7 +815,8 @@ pub fn run() {
             save_panel_image,
             open_filter_window,
             take_filter_init,
-            write_text_file
+            write_text_file,
+            duplicate_plot_window,
         ])
         .setup(|app| {
             let handle = app.handle();
@@ -769,6 +826,13 @@ pub fn run() {
                 "New Window",
                 true,
                 Some("CmdOrCtrl+N"),
+            )?;
+            let duplicate_window = MenuItem::with_id(
+                handle,
+                MENU_DUPLICATE_WINDOW,
+                "Duplicate Window",
+                true,
+                None::<&str>,
             )?;
             // 標準のアプリメニュー（Settings ⌘, / Hide ⌘H / Quit ⌘Q など）
             let settings_item = MenuItem::with_id(
@@ -818,6 +882,7 @@ pub fn run() {
             )?;
             let file_menu = SubmenuBuilder::new(handle, "File")
                 .item(&new_window)
+                .item(&duplicate_window)
                 .item(&open_file)
                 .separator()
                 .item(&reveal)
@@ -866,6 +931,7 @@ pub fn run() {
             // カスタムメニューが既定メニューを置き換えるため、これが無いと入力欄で
             // selectAll/copy/paste 等の標準ショートカットが効かなくなる。
             // Cut(⌘X) は plot の軸切替 ⌘X と衝突するため意図的に外している。
+            // Copy(⌘C) は plot 画面の copy イベントで window 複製として横取りする。
             let edit_menu = SubmenuBuilder::new(handle, "Edit")
                 .undo()
                 .redo()
@@ -890,6 +956,7 @@ pub fn run() {
                     eprintln!("failed to create plot window: {err}");
                 }
             }
+            MENU_DUPLICATE_WINDOW => dispatch_menu_action(app, "duplicate-window"),
             MENU_NEXT_WINDOW => cycle_windows(app, true),
             MENU_PREV_WINDOW => cycle_windows(app, false),
             MENU_ARRANGE => arrange_windows(app),
@@ -916,7 +983,7 @@ pub fn run() {
                 for url in urls {
                     if let Ok(path) = url.to_file_path() {
                         if let Some(p) = path.to_str() {
-                            if let Err(err) = spawn_window(app, Some(p)) {
+                            if let Err(err) = spawn_window(app, Some(p), None) {
                                 eprintln!("failed to open file window: {err}");
                             } else {
                                 opened_any = true;

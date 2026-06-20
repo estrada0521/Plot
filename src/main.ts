@@ -15,6 +15,15 @@ interface Dataset {
   default_y?: string;
 }
 
+interface DuplicateInit {
+  xIndex: number;
+  yIndex: number;
+  panelWidth: number;
+  panelHeight: number;
+  plotMode: "lines" | "markers";
+  dragmode: "zoom" | "pan";
+}
+
 const openBtn = document.getElementById("open-btn") as HTMLButtonElement;
 const xSelect = document.getElementById("x-select") as HTMLSelectElement;
 const ySelect = document.getElementById("y-select") as HTMLSelectElement;
@@ -250,10 +259,29 @@ document.querySelectorAll<HTMLElement>(".grip").forEach((grip) => {
   });
 });
 
-// File メニュー（⌘O/⌘F/⌘E/⌘⇧C）からの操作。フォーカス中ウィンドウにのみ届く。
+function duplicateWindow() {
+  if (!currentPath) return;
+  invoke("duplicate_plot_window", {
+    path: currentPath,
+    xIndex: Math.max(0, xSelect.selectedIndex),
+    yIndex: Math.max(0, ySelect.selectedIndex),
+    panelWidth: panelEl.offsetWidth,
+    panelHeight: panelEl.offsetHeight,
+    plotMode,
+    dragmode,
+  }).catch((err) => {
+    statusEl.textContent = `エラー: ${err}`;
+  });
+}
+
+// File メニュー（⌘O/⌘C/⌘F/⌘E/⌥⌘F）からの操作。フォーカス中ウィンドウにのみ届く。
 function menuAction(action: string) {
   if (action === "open") {
     openBtn.click();
+    return;
+  }
+  if (action === "duplicate-window") {
+    duplicateWindow();
     return;
   }
   if (!currentPath || !current) return;
@@ -328,6 +356,9 @@ window.addEventListener("keydown", (e) => {
   if (key === "s" && !e.shiftKey) {
     e.preventDefault();
     savePanel();
+  } else if (key === "c" && !e.shiftKey) {
+    e.preventDefault();
+    duplicateWindow();
   } else if (key === "x") {
     e.preventDefault();
     cycleAxis(xSelect, e.shiftKey ? -1 : 1);
@@ -337,7 +368,37 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-async function loadDataset(path: string) {
+document.addEventListener("copy", (e) => {
+  if (!currentPath) return;
+  e.preventDefault();
+  duplicateWindow();
+});
+
+function applyDuplicateInit(init: DuplicateInit) {
+  if (!current) return;
+  if (init.xIndex >= 0 && init.xIndex < xSelect.options.length) {
+    xSelect.selectedIndex = init.xIndex;
+  }
+  if (init.yIndex >= 0 && init.yIndex < ySelect.options.length) {
+    ySelect.selectedIndex = init.yIndex;
+  }
+  if (init.plotMode === "lines" || init.plotMode === "markers") {
+    plotMode = init.plotMode;
+  }
+  if (init.dragmode === "zoom" || init.dragmode === "pan") {
+    dragmode = init.dragmode;
+  }
+  const minW = parseInt(themeVar("--panel-min-width"), 10) || 80;
+  const minH = parseInt(themeVar("--panel-min-height"), 10) || 30;
+  if (Number.isFinite(init.panelWidth)) {
+    panelEl.style.width = `${Math.max(minW, init.panelWidth)}px`;
+  }
+  if (Number.isFinite(init.panelHeight)) {
+    panelEl.style.height = `${Math.max(minH, init.panelHeight)}px`;
+  }
+}
+
+async function loadDataset(path: string, duplicateInit?: DuplicateInit | null) {
   statusEl.textContent = "";
   try {
     current = await invoke<Dataset>("read_dataset", { path });
@@ -345,6 +406,7 @@ async function loadDataset(path: string) {
     await invoke("mark_window_loaded");
     titleEl.textContent = current.display_name ?? current.name;
     setupAxisSelectors(current);
+    if (duplicateInit) applyDuplicateInit(duplicateInit);
     render();
   } catch (err) {
     statusEl.textContent = `エラー: ${err}`;
@@ -360,8 +422,11 @@ openBtn.addEventListener("click", async () => {
 });
 
 // Finder で開かれたファイル（関連付け）がこのウィンドウに割り当てられていれば自動ロード
-invoke<string | null>("take_pending_file").then((path) => {
-  if (path) loadDataset(path);
+Promise.all([
+  invoke<string | null>("take_pending_file"),
+  invoke<DuplicateInit | null>("take_duplicate_init"),
+]).then(([path, duplicateInit]) => {
+  if (path) loadDataset(path, duplicateInit);
 });
 
 function setupAxisSelectors(ds: Dataset) {

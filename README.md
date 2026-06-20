@@ -13,6 +13,7 @@ A lightweight launcher-style macOS app that simply graphs array data such as csv
 
 - Open — `⌘O`
 - New window — `⌘N`
+- Duplicate window — `⌘C`
 - Reveal in Finder — `⌘F`
 - Open in editor (configurable) — `⌘E`
 - Copy path — `⌘P`
