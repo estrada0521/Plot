@@ -22,10 +22,12 @@ struct PendingFiles(Mutex<HashMap<String, String>>);
 struct DuplicateInit {
     x_index: usize,
     y_index: usize,
+    y_indices: Vec<usize>,
     panel_width: f64,
     panel_height: f64,
     plot_mode: String,
     dragmode: String,
+    exclude_outliers: bool,
 }
 #[derive(Default)]
 struct DuplicateInits(Mutex<HashMap<String, DuplicateInit>>);
@@ -47,6 +49,18 @@ struct FilterInit {
 }
 #[derive(Default)]
 struct FilterInits(Mutex<HashMap<String, FilterInit>>);
+
+/// 軸設定ウィンドウの初期データ。
+#[derive(Clone, Serialize)]
+struct AxesInit {
+    source_label: String,
+    name: String,
+    columns: Vec<String>,
+    x_index: usize,
+    y_indices: Vec<usize>,
+}
+#[derive(Default)]
+struct AxesInits(Mutex<HashMap<String, AxesInit>>);
 
 /// フロントが plot パネルのサイズを報告する（リサイズ毎）。
 #[tauri::command]
@@ -81,6 +95,12 @@ fn mark_window_loaded(window: tauri::Window, loaded: State<LoadedWindows>) {
 /// フィルタウィンドウが起動直後に呼び、対象ウィンドウ label と列一覧を受け取る。
 #[tauri::command]
 fn take_filter_init(window: tauri::Window, inits: State<FilterInits>) -> Option<FilterInit> {
+    inits.0.lock().ok()?.get(window.label()).cloned()
+}
+
+/// 軸設定ウィンドウが起動直後に呼び、対象ウィンドウ label と列一覧を受け取る。
+#[tauri::command]
+fn take_axes_init(window: tauri::Window, inits: State<AxesInits>) -> Option<AxesInit> {
     inits.0.lock().ok()?.get(window.label()).cloned()
 }
 
@@ -491,6 +511,8 @@ const MENU_REVEAL: &str = "reveal-in-finder";
 const MENU_OPEN_EDITOR: &str = "open-in-editor";
 const MENU_COPY_PATH: &str = "copy-path";
 const MENU_FILTER: &str = "filter-data";
+const MENU_TOGGLE_OUTLIERS: &str = "toggle-outliers";
+const MENU_AXES: &str = "axes";
 
 /// File メニューの操作を、フォーカス中のウィンドウのフロントへ通知する
 /// （対象ファイルはフロントが保持しているため）。
@@ -503,6 +525,57 @@ fn dispatch_menu_action(app: &AppHandle, action: &str) {
         // emit はブロードキャストのため、フォーカス中ウィンドウのみに届くよう emit_to を使う。
         let _ = app.emit_to(w.label(), "menu-action", action);
     }
+}
+
+/// 対象ウィンドウ（source_label）に紐づく軸設定ウィンドウを開く（既にあれば前面化）。
+#[tauri::command]
+fn open_axes_window(
+    app: AppHandle,
+    source_label: String,
+    name: String,
+    columns: Vec<String>,
+    x_index: usize,
+    y_indices: Vec<usize>,
+    inits: State<AxesInits>,
+) -> Result<(), String> {
+    let label = format!("axes-{source_label}");
+    if let Ok(mut m) = inits.0.lock() {
+        m.insert(
+            label.clone(),
+            AxesInit {
+                source_label: source_label.clone(),
+                name,
+                columns,
+                x_index,
+                y_indices,
+            },
+        );
+    }
+    if let Some(w) = app.get_webview_window(&label) {
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    const GAP: f64 = 8.0;
+    let near = app.get_webview_window(&source_label).and_then(|w| {
+        let sf = w.scale_factor().ok()?;
+        let pos = w.outer_position().ok()?.to_logical::<f64>(sf);
+        let size = w.outer_size().ok()?.to_logical::<f64>(sf);
+        Some((pos.x + size.width + GAP, pos.y))
+    });
+    let mut builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("axes.html".into()))
+        .title("Axes")
+        .inner_size(420.0, 300.0)
+        .min_inner_size(320.0, 180.0)
+        .resizable(true)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .focused(true);
+    if let Some((x, y)) = near {
+        builder = builder.position(x, y);
+    }
+    builder.build().map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// 開いているウィンドウを画面左上から行詰めでタイル配置する。
@@ -722,18 +795,22 @@ fn duplicate_plot_window(
     path: String,
     x_index: usize,
     y_index: usize,
+    y_indices: Vec<usize>,
     panel_width: f64,
     panel_height: f64,
     plot_mode: String,
     dragmode: String,
+    exclude_outliers: bool,
 ) -> Result<(), String> {
     let init = DuplicateInit {
         x_index,
         y_index,
+        y_indices,
         panel_width,
         panel_height,
         plot_mode,
         dragmode,
+        exclude_outliers,
     };
     spawn_window(&app, Some(&path), Some(init)).map_err(|e| e.to_string())
 }
@@ -803,6 +880,7 @@ pub fn run() {
         .manage(LoadedWindows::default())
         .manage(WindowMetrics::default())
         .manage(FilterInits::default())
+        .manage(AxesInits::default())
         .invoke_handler(tauri::generate_handler![
             read_dataset,
             take_pending_file,
@@ -815,6 +893,8 @@ pub fn run() {
             save_panel_image,
             open_filter_window,
             take_filter_init,
+            open_axes_window,
+            take_axes_init,
             write_text_file,
             duplicate_plot_window,
         ])
@@ -880,6 +960,20 @@ pub fn run() {
                 true,
                 Some("CmdOrCtrl+Alt+F"),
             )?;
+            let outliers_item = MenuItem::with_id(
+                handle,
+                MENU_TOGGLE_OUTLIERS,
+                "Exclude Outliers",
+                true,
+                Some("CmdOrCtrl+Alt+R"),
+            )?;
+            let axes_item = MenuItem::with_id(
+                handle,
+                MENU_AXES,
+                "Axes…",
+                true,
+                Some("CmdOrCtrl+Alt+Shift+G"),
+            )?;
             let file_menu = SubmenuBuilder::new(handle, "File")
                 .item(&new_window)
                 .item(&duplicate_window)
@@ -890,7 +984,11 @@ pub fn run() {
                 .item(&copy_path_item)
                 .build()?;
             // Tools メニュー（データ操作系。今後ここに追加していく）。
-            let tools_menu = SubmenuBuilder::new(handle, "Tools").item(&filter_item).build()?;
+            let tools_menu = SubmenuBuilder::new(handle, "Tools")
+                .item(&filter_item)
+                .item(&axes_item)
+                .item(&outliers_item)
+                .build()?;
             let next_window = MenuItem::with_id(
                 handle,
                 MENU_NEXT_WINDOW,
@@ -971,6 +1069,8 @@ pub fn run() {
             MENU_OPEN_EDITOR => dispatch_menu_action(app, "editor"),
             MENU_COPY_PATH => dispatch_menu_action(app, "copy-path"),
             MENU_FILTER => dispatch_menu_action(app, "filter"),
+            MENU_AXES => dispatch_menu_action(app, "axes"),
+            MENU_TOGGLE_OUTLIERS => dispatch_menu_action(app, "toggle-outliers"),
             _ => {}
         })
         .build(tauri::generate_context!())

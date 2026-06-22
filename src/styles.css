@@ -135,6 +135,23 @@ body {
   transition: color 0.12s ease;
 }
 
+.title-indicator {
+  display: none;
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-chrome-text);
+  background: var(--color-icon-active);
+  font-size: 10px;
+  line-height: 14px;
+  pointer-events: none;
+}
+
+body.outliers-active .title-indicator {
+  display: inline-flex;
+}
+
 /* ウィンドウ非フォーカス時はファイル名/表示名を薄く */
 body.window-blurred .title {
   color: var(--color-text-muted);
@@ -323,6 +340,85 @@ body.window-blurred .title {
   outline: none;
 }
 
+.axes-panel {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+  color: var(--color-chrome-text);
+  scrollbar-width: none;
+}
+
+.axes-panel::-webkit-scrollbar {
+  display: none;
+}
+
+.axes-grid {
+  display: grid;
+  grid-template-columns: 54px 150px 28px;
+  align-items: center;
+  gap: 8px;
+}
+
+.axes-head {
+  height: 24px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.axes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.axes-row {
+  min-height: 28px;
+}
+
+.axes-axis {
+  color: var(--color-chrome-text);
+}
+
+.axes-row select {
+  width: 150px;
+  padding: 4px 8px;
+  font: inherit;
+  color: var(--color-chrome-text);
+  background: var(--color-control-surface);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.axes-row select:focus {
+  outline: none;
+}
+
+.axes-remove {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--color-chrome-text);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.axes-remove:hover {
+  background: var(--color-header-button-hover);
+}
+
+.axes-remove:disabled {
+  color: var(--color-text-disabled);
+  cursor: default;
+}
+
+.axes-remove:disabled:hover {
+  background: none;
+}
+
 /* フィルタウィンドウ固有。本体は chrome 同様にダーク化するので文字は --color-chrome-text。 */
 .filter-list {
   flex: 1;
@@ -431,4 +527,3 @@ body.window-blurred .title {
 .filter-btn-reset {
   margin-right: auto;
 }
-

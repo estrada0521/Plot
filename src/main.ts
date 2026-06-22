@@ -18,10 +18,17 @@ interface Dataset {
 interface DuplicateInit {
   xIndex: number;
   yIndex: number;
+  yIndices?: number[];
   panelWidth: number;
   panelHeight: number;
   plotMode: "lines" | "markers";
   dragmode: "zoom" | "pan";
+  excludeOutliers?: boolean;
+}
+
+interface AxesApply {
+  xIndex: number;
+  yIndices: number[];
 }
 
 const openBtn = document.getElementById("open-btn") as HTMLButtonElement;
@@ -36,6 +43,7 @@ const panBtn = document.getElementById("pan-btn") as HTMLButtonElement;
 const zoomBtn = document.getElementById("zoom-btn") as HTMLButtonElement;
 const lineBtn = document.getElementById("line-btn") as HTMLButtonElement;
 const scatterBtn = document.getElementById("scatter-btn") as HTMLButtonElement;
+const outlierBtn = document.getElementById("outlier-btn") as HTMLButtonElement;
 const titleEl = document.getElementById("title") as HTMLSpanElement;
 const pinBtn = document.getElementById("win-pin") as HTMLButtonElement;
 
@@ -87,6 +95,8 @@ let current: Dataset | null = null;
 let currentPath: string | null = null;
 let dragmode: "zoom" | "pan" = "zoom";
 let plotMode: "lines" | "markers" = "lines";
+let excludeOutliers = false;
+let yAxisIndices: number[] = [];
 
 // データフィルタ（filter ウィンドウから適用）。列インデックスごとの min/max。
 // 元データ（current.rows）は不変。描画/保存時にこの規則で行を絞り込むだけ。
@@ -265,10 +275,12 @@ function duplicateWindow() {
     path: currentPath,
     xIndex: Math.max(0, xSelect.selectedIndex),
     yIndex: Math.max(0, ySelect.selectedIndex),
+    yIndices: yAxisIndices,
     panelWidth: panelEl.offsetWidth,
     panelHeight: panelEl.offsetHeight,
     plotMode,
     dragmode,
+    excludeOutliers,
   }).catch((err) => {
     statusEl.textContent = `エラー: ${err}`;
   });
@@ -282,6 +294,14 @@ function menuAction(action: string) {
   }
   if (action === "duplicate-window") {
     duplicateWindow();
+    return;
+  }
+  if (action === "toggle-outliers") {
+    toggleOutliers();
+    return;
+  }
+  if (action === "axes") {
+    openAxesWindow();
     return;
   }
   if (!currentPath || !current) return;
@@ -336,6 +356,14 @@ async function savePanel() {
 // 片方の軸の列を変更したとき、もう片方の軸の表示範囲は維持して描画する。
 function changeAxis(changed: "x" | "y") {
   if (!current) return;
+  if (changed === "y") {
+    const nextY = Number(ySelect.value);
+    if (yAxisIndices.length <= 1) {
+      yAxisIndices = [nextY];
+    } else {
+      yAxisIndices = [...yAxisIndices.slice(0, -1), nextY];
+    }
+  }
   const gd = plotEl as PlotElementWithHistory;
   const keep = changed === "x" ? "y" : "x";
   const keepAxis = keep === "x" ? gd._fullLayout?.xaxis : gd._fullLayout?.yaxis;
@@ -351,9 +379,17 @@ function cycleAxis(sel: HTMLSelectElement, dir: number) {
   changeAxis(sel === xSelect ? "x" : "y");
 }
 window.addEventListener("keydown", (e) => {
-  if (!e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!e.metaKey || e.ctrlKey) return;
   const key = e.key.toLowerCase();
-  if (key === "s" && !e.shiftKey) {
+  if (key === "r" && e.altKey && !e.shiftKey) {
+    e.preventDefault();
+    toggleOutliers();
+  } else if (key === "g" && e.altKey && e.shiftKey) {
+    e.preventDefault();
+    openAxesWindow();
+  } else if (e.altKey) {
+    return;
+  } else if (key === "s" && !e.shiftKey) {
     e.preventDefault();
     savePanel();
   } else if (key === "c" && !e.shiftKey) {
@@ -382,12 +418,17 @@ function applyDuplicateInit(init: DuplicateInit) {
   if (init.yIndex >= 0 && init.yIndex < ySelect.options.length) {
     ySelect.selectedIndex = init.yIndex;
   }
+  const validY = init.yIndices?.filter((i) => i >= 0 && i < ySelect.options.length);
+  yAxisIndices = validY?.length ? validY : [ySelect.selectedIndex];
+  ySelect.selectedIndex = yAxisIndices[yAxisIndices.length - 1];
   if (init.plotMode === "lines" || init.plotMode === "markers") {
     plotMode = init.plotMode;
   }
   if (init.dragmode === "zoom" || init.dragmode === "pan") {
     dragmode = init.dragmode;
   }
+  excludeOutliers = init.excludeOutliers === true;
+  updateOutlierButton();
   const minW = parseInt(themeVar("--panel-min-width"), 10) || 80;
   const minH = parseInt(themeVar("--panel-min-height"), 10) || 30;
   if (Number.isFinite(init.panelWidth)) {
@@ -445,11 +486,36 @@ function setupAxisSelectors(ds: Dataset) {
   const dy = ds.default_y ? ds.columns.indexOf(ds.default_y) : -1;
   fill(xSelect, dx >= 0 ? dx : 0);
   fill(ySelect, dy >= 0 ? dy : ds.columns.length > 1 ? 1 : 0);
+  yAxisIndices = [ySelect.selectedIndex];
   requestAnimationFrame(() => fitWindow());
 }
 
 xSelect.addEventListener("change", () => changeAxis("x"));
 ySelect.addEventListener("change", () => changeAxis("y"));
+
+listen<AxesApply>("axes-apply", (e) => {
+  if (!current) return;
+  const xIndex = e.payload.xIndex;
+  const ys = e.payload.yIndices.filter((i) => i >= 0 && i < current!.columns.length);
+  if (xIndex < 0 || xIndex >= current.columns.length || ys.length === 0) return;
+  xSelect.selectedIndex = xIndex;
+  ySelect.selectedIndex = ys[ys.length - 1];
+  yAxisIndices = ys;
+  render();
+}, { target: appWindow.label }).catch(() => {});
+
+function openAxesWindow() {
+  if (!current) return;
+  invoke("open_axes_window", {
+    sourceLabel: appWindow.label,
+    name: current.display_name ?? current.name,
+    columns: current.columns,
+    xIndex: Math.max(0, xSelect.selectedIndex),
+    yIndices: yAxisIndices.length ? yAxisIndices : [Math.max(0, ySelect.selectedIndex)],
+  }).catch((err) => {
+    statusEl.textContent = `エラー: ${err}`;
+  });
+}
 
 // --- matplotlib 風ナビゲーションツールバー（自前 → Plotly API） ---
 function setDragmode(mode: "zoom" | "pan") {
@@ -665,7 +731,7 @@ function setPlotMode(mode: "lines" | "markers") {
     const fl = (plotEl as unknown as { _fullLayout?: { xaxis?: { range?: number[] }; yaxis?: { range?: number[] } } })._fullLayout;
     const xr = fl?.xaxis?.range ? fl.xaxis.range.slice() : null;
     const yr = fl?.yaxis?.range ? fl.yaxis.range.slice() : null;
-    Plotly.restyle(plotEl, { mode }, [0]);
+    Plotly.restyle(plotEl, { mode });
     if (xr && yr) {
       Plotly.relayout(plotEl, { "xaxis.range": xr, "yaxis.range": yr });
     }
@@ -675,32 +741,109 @@ function setPlotMode(mode: "lines" | "markers") {
 }
 lineBtn.addEventListener("click", () => setPlotMode("lines"));
 scatterBtn.addEventListener("click", () => setPlotMode("markers"));
+outlierBtn.addEventListener("click", () => toggleOutliers());
 
 function themeVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function median(values: number[]) {
+  if (!values.length) return NaN;
+  const sorted = values.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function quantile(sortedValues: number[], q: number) {
+  if (!sortedValues.length) return NaN;
+  const pos = (sortedValues.length - 1) * q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  const next = sortedValues[base + 1];
+  return next === undefined ? sortedValues[base] : sortedValues[base] + rest * (next - sortedValues[base]);
+}
+
+function outlierBounds(values: number[]): [number, number] | null {
+  const finite = values.filter(Number.isFinite);
+  if (finite.length < 4) return null;
+  const center = median(finite);
+  const mad = median(finite.map((v) => Math.abs(v - center)));
+  if (Number.isFinite(mad) && mad > 0) {
+    const sigma = 1.4826 * mad;
+    return [center - 5 * sigma, center + 5 * sigma];
+  }
+  const sorted = finite.slice().sort((a, b) => a - b);
+  const q1 = quantile(sorted, 0.25);
+  const q3 = quantile(sorted, 0.75);
+  const iqr = q3 - q1;
+  if (!Number.isFinite(iqr) || iqr <= 0) return null;
+  return [q1 - 3 * iqr, q3 + 3 * iqr];
+}
+
+function removeOutliersByAxes(
+  rows: (number | null)[][],
+  xi: number,
+  yIndices: number[],
+): (number | null)[][] {
+  if (!excludeOutliers) return rows;
+  const valueAt = (row: (number | null)[], index: number) => {
+    const value = row[index];
+    return value === null || value === undefined ? NaN : Number(value);
+  };
+  const xBounds = outlierBounds(rows.map((r) => valueAt(r, xi)));
+  const yBounds = yIndices.map((yi) => outlierBounds(rows.map((r) => valueAt(r, yi))));
+  if (!xBounds && yBounds.every((b) => !b)) return rows;
+  return rows.filter((r) => {
+    const x = valueAt(r, xi);
+    if (!Number.isFinite(x)) return false;
+    if (xBounds && (x < xBounds[0] || x > xBounds[1])) return false;
+    for (let i = 0; i < yIndices.length; i += 1) {
+      const y = valueAt(r, yIndices[i]);
+      const bounds = yBounds[i];
+      if (!Number.isFinite(y)) return false;
+      if (bounds && (y < bounds[0] || y > bounds[1])) return false;
+    }
+    return true;
+  });
+}
+
+function updateOutlierButton() {
+  document.body.classList.toggle("outliers-active", excludeOutliers);
+  outlierBtn.classList.toggle("active", excludeOutliers);
+  outlierBtn.setAttribute("aria-pressed", String(excludeOutliers));
+  outlierBtn.title = excludeOutliers ? "外れ値除外を解除 (⌥⌘R)" : "外れ値除外 (⌥⌘R)";
+}
+
+function toggleOutliers() {
+  excludeOutliers = !excludeOutliers;
+  updateOutlierButton();
+  if (current) render();
 }
 
 // preserve を渡すと、その軸だけ現在の表示範囲を維持し、もう片方を再フィットする。
 function render(preserve?: { axis: "x" | "y"; range: [number, number] }) {
   if (!current) return;
   const xi = Number(xSelect.value);
-  const yi = Number(ySelect.value);
-  const rows = getFilteredRows();
+  if (!yAxisIndices.length) yAxisIndices = [Number(ySelect.value)];
+  const validYIndices = yAxisIndices.filter((i) => i >= 0 && i < current!.columns.length);
+  if (!validYIndices.length) validYIndices.push(Number(ySelect.value));
+  const rows = removeOutliersByAxes(getFilteredRows(), xi, validYIndices);
   const x = rows.map((r) => r[xi]);
-  const y = rows.map((r) => r[yi]);
 
   const lineColor = themeVar("--color-plot-line");
   const frameColor = themeVar("--color-plot-frame");
   const textColor = themeVar("--color-text");
   const fontFamily = themeVar("--font-family");
 
-  const keep = (which: "x" | "y") =>
-    preserve && preserve.axis === which
+  const keep = (which: "x" | "y", index = 0) =>
+    preserve &&
+    preserve.axis === which &&
+    (which === "x" || index === 0)
       ? { autorange: false, range: preserve.range }
       : { autorange: true };
 
   // matplotlib 風: グリッド/ゼロラインなし、プロット領域を四角い枠で囲む
-  const axis = (title: string, which: "x" | "y", titleStandoff = 4) => ({
+  const axis = (title: string, which: "x" | "y", titleStandoff = 4, index = 0) => ({
     title: { text: title, standoff: titleStandoff },
     showgrid: false,
     zeroline: false,
@@ -712,27 +855,56 @@ function render(preserve?: { axis: "x" | "y"; range: [number, number] }) {
     tickcolor: frameColor,
     ticklen: 6,
     tickwidth: 1,
-    ...keep(which),
+    ...keep(which, index),
   });
+
+  const n = validYIndices.length;
+  const gap = n > 1 ? 0.035 : 0;
+  const panelHeight = (1 - gap * (n - 1)) / n;
+  const traces = validYIndices.map((yi, i) => ({
+    x,
+    y: rows.map((r) => r[yi]),
+    type: "scattergl",
+    mode: plotMode,
+    line: { width: 2.5, color: lineColor },
+    marker: { size: 4, color: lineColor },
+    xaxis: i === 0 ? "x" : `x${i + 1}`,
+    yaxis: i === 0 ? "y" : `y${i + 1}`,
+    showlegend: false,
+  }));
+  const yAxes = Object.fromEntries(validYIndices.map((yi, i) => {
+    const top = 1 - i * (panelHeight + gap);
+    const bottom = top - panelHeight;
+    const key = i === 0 ? "yaxis" : `yaxis${i + 1}`;
+    return [key, {
+      ...axis(current!.columns[yi], "y", 5, i),
+      domain: [bottom, top],
+    }];
+  }));
+  const xAxes = Object.fromEntries(validYIndices.map((_, i) => {
+    const key = i === 0 ? "xaxis" : `xaxis${i + 1}`;
+    const yRef = i === 0 ? "y" : `y${i + 1}`;
+    const isBottom = i === validYIndices.length - 1;
+    return [key, {
+      ...axis(isBottom ? current!.columns[xi] : "", "x", 3),
+      anchor: yRef,
+      domain: [0, 1],
+      showticklabels: isBottom,
+      ...(i === 0 ? {} : { matches: "x" }),
+    }];
+  }));
 
   Plotly.react(
     plotEl,
-    [{
-      x,
-      y,
-      type: "scattergl",
-      mode: plotMode,
-      line: { width: 2.5, color: lineColor },
-      marker: { size: 4, color: lineColor },
-    }],
+    traces,
     {
       margin: { l: 60, r: 20, t: 20, b: 50 },
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: "rgba(0,0,0,0)",
       font: { color: textColor, family: fontFamily },
       dragmode,
-      xaxis: axis(current.columns[xi], "x", 3),
-      yaxis: axis(current.columns[yi], "y", 5),
+      ...xAxes,
+      ...yAxes,
     },
     { responsive: true, displayModeBar: false, scrollZoom: false, showTips: false },
   ).then(() => {
@@ -744,6 +916,8 @@ function render(preserve?: { axis: "x" | "y"; range: [number, number] }) {
   panBtn.classList.toggle("active", dragmode === "pan");
   lineBtn.classList.toggle("active", plotMode === "lines");
   scatterBtn.classList.toggle("active", plotMode === "markers");
+  updateOutlierButton();
   updateHistoryButtons();
 }
 updateHistoryButtons();
+updateOutlierButton();

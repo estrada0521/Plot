@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Plots ウィンドウの権限",
-  "windows": ["main", "plot-*", "settings", "filter-*"],
+  "windows": ["main", "plot-*", "settings", "filter-*", "axes-*"],
   "permissions": [
     "core:default",
     "dialog:default",

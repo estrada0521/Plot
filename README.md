@@ -21,6 +21,8 @@ A lightweight launcher-style macOS app that simply graphs array data such as csv
 - Next / previous X-axis column — `⌘X` / `⇧⌘X`
 - Next / previous Y-axis column — `⌘Y` / `⇧⌘Y`
 - Open the filter window — `⌥⌘F`
+- Open the axes window — `⇧⌥⌘G`
+- Exclude outliers — `⌥⌘R`
 - Settings — `⌘,`
 - Next / previous window — `` ⌘` `` / `` ⇧⌘` ``
 - Tile windows — `⌥⌘A`
