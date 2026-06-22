@@ -754,32 +754,6 @@ function median(values: number[]) {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
-function quantile(sortedValues: number[], q: number) {
-  if (!sortedValues.length) return NaN;
-  const pos = (sortedValues.length - 1) * q;
-  const base = Math.floor(pos);
-  const rest = pos - base;
-  const next = sortedValues[base + 1];
-  return next === undefined ? sortedValues[base] : sortedValues[base] + rest * (next - sortedValues[base]);
-}
-
-function outlierBounds(values: number[]): [number, number] | null {
-  const finite = values.filter(Number.isFinite);
-  if (finite.length < 4) return null;
-  const center = median(finite);
-  const mad = median(finite.map((v) => Math.abs(v - center)));
-  if (Number.isFinite(mad) && mad > 0) {
-    const sigma = 1.4826 * mad;
-    return [center - 5 * sigma, center + 5 * sigma];
-  }
-  const sorted = finite.slice().sort((a, b) => a - b);
-  const q1 = quantile(sorted, 0.25);
-  const q3 = quantile(sorted, 0.75);
-  const iqr = q3 - q1;
-  if (!Number.isFinite(iqr) || iqr <= 0) return null;
-  return [q1 - 3 * iqr, q3 + 3 * iqr];
-}
-
 function removeOutliersByAxes(
   rows: (number | null)[][],
   xi: number,
@@ -790,21 +764,48 @@ function removeOutliersByAxes(
     const value = row[index];
     return value === null || value === undefined ? NaN : Number(value);
   };
-  const xBounds = outlierBounds(rows.map((r) => valueAt(r, xi)));
-  const yBounds = yIndices.map((yi) => outlierBounds(rows.map((r) => valueAt(r, yi))));
-  if (!xBounds && yBounds.every((b) => !b)) return rows;
-  return rows.filter((r) => {
-    const x = valueAt(r, xi);
-    if (!Number.isFinite(x)) return false;
-    if (xBounds && (x < xBounds[0] || x > xBounds[1])) return false;
-    for (let i = 0; i < yIndices.length; i += 1) {
-      const y = valueAt(r, yIndices[i]);
-      const bounds = yBounds[i];
-      if (!Number.isFinite(y)) return false;
-      if (bounds && (y < bounds[0] || y > bounds[1])) return false;
+
+  const indexed = rows
+    .map((row, index) => ({ row, index, x: valueAt(row, xi) }))
+    .filter((item) => Number.isFinite(item.x))
+    .sort((a, b) => a.x - b.x);
+  if (indexed.length < 5) return rows;
+
+  const outlierRows = new Set<number>();
+  const halfWindow = Math.min(5, Math.floor((indexed.length - 1) / 2));
+  const threshold = 4.5;
+
+  for (let i = 0; i < indexed.length; i += 1) {
+    const start = Math.max(0, i - halfWindow);
+    const end = Math.min(indexed.length, i + halfWindow + 1);
+    for (const yi of yIndices) {
+      const y = valueAt(indexed[i].row, yi);
+      if (!Number.isFinite(y)) continue;
+      const neighborhood = indexed
+        .slice(start, end)
+        .map((item) => valueAt(item.row, yi))
+        .filter(Number.isFinite);
+      if (neighborhood.length < 5) continue;
+      const center = median(neighborhood);
+      const mad = median(neighborhood.map((v) => Math.abs(v - center)));
+      if (Number.isFinite(mad) && mad > 0) {
+        const sigma = 1.4826 * mad;
+        if (Math.abs(y - center) > threshold * sigma) {
+          outlierRows.add(indexed[i].index);
+          break;
+        }
+        continue;
+      }
+      const distinct = new Set(neighborhood.map((v) => String(v))).size;
+      if (distinct <= 2 && Math.abs(y - center) > 0) {
+        outlierRows.add(indexed[i].index);
+        break;
+      }
     }
-    return true;
-  });
+  }
+
+  if (!outlierRows.size) return rows;
+  return rows.filter((_, index) => !outlierRows.has(index));
 }
 
 function updateOutlierButton() {
@@ -815,9 +816,11 @@ function updateOutlierButton() {
 }
 
 function toggleOutliers() {
+  const gd = plotEl as PlotElementWithHistory;
+  const xRange = readAxisNumericRange(gd._fullLayout?.xaxis);
   excludeOutliers = !excludeOutliers;
   updateOutlierButton();
-  if (current) render();
+  if (current) render(xRange ? { axis: "x", range: xRange } : undefined);
 }
 
 // preserve を渡すと、その軸だけ現在の表示範囲を維持し、もう片方を再フィットする。
