@@ -29,6 +29,21 @@ interface DuplicateInit {
 interface AxesApply {
   xIndex: number;
   yIndices: number[];
+  xRange?: [number, number] | null;
+  yRanges?: ([number, number] | null)[];
+  twinYRange?: [number, number] | null;
+}
+
+interface RangeState {
+  xRange?: [number, number] | null;
+  yRanges?: ([number, number] | null)[];
+  twinYRange?: [number, number] | null;
+}
+
+interface TwinDataset {
+  dataset: Dataset;
+  path: string;
+  xIndex: number;
 }
 
 const openBtn = document.getElementById("open-btn") as HTMLButtonElement;
@@ -45,6 +60,7 @@ const lineBtn = document.getElementById("line-btn") as HTMLButtonElement;
 const scatterBtn = document.getElementById("scatter-btn") as HTMLButtonElement;
 const outlierBtn = document.getElementById("outlier-btn") as HTMLButtonElement;
 const titleEl = document.getElementById("title") as HTMLSpanElement;
+const twinTitleEl = document.getElementById("twin-title") as HTMLSpanElement;
 const pinBtn = document.getElementById("win-pin") as HTMLButtonElement;
 
 // --- 自前タイトルバーのウィンドウ操作 ---
@@ -97,6 +113,14 @@ let dragmode: "zoom" | "pan" = "zoom";
 let plotMode: "lines" | "markers" = "lines";
 let excludeOutliers = false;
 let yAxisIndices: number[] = [];
+let twin: TwinDataset | null = null;
+
+function updateTwinTitle() {
+  document.body.classList.toggle("twin-active", twin !== null);
+  const name = twin?.dataset.display_name ?? twin?.dataset.name ?? "";
+  twinTitleEl.textContent = name;
+  twinTitleEl.title = name;
+}
 
 // データフィルタ（filter ウィンドウから適用）。列インデックスごとの min/max。
 // 元データ（current.rows）は不変。描画/保存時にこの規則で行を絞り込むだけ。
@@ -286,6 +310,39 @@ function duplicateWindow() {
   });
 }
 
+function chooseTwinYIndex(ds: Dataset, preferredName: string, xName: string) {
+  const preferred = ds.columns.indexOf(preferredName);
+  if (preferred >= 0 && ds.columns[preferred] !== xName) return preferred;
+  const defaultY = ds.default_y ? ds.columns.indexOf(ds.default_y) : -1;
+  if (defaultY >= 0 && ds.columns[defaultY] !== xName) return defaultY;
+  const fallback = ds.columns.findIndex((name) => name !== xName);
+  return fallback >= 0 ? fallback : 0;
+}
+
+async function addTwinData() {
+  if (!current) return;
+  const selected = await open({
+    multiple: false,
+    filters: [{ name: "Data", extensions: ["csv", "dat", "txt", "ras"] }],
+  });
+  if (typeof selected !== "string") return;
+  try {
+    const ds = await invoke<Dataset>("read_dataset", { path: selected });
+    const xName = current.columns[Number(xSelect.value)];
+    const xIndex = ds.columns.indexOf(xName);
+    if (xIndex < 0) {
+      statusEl.textContent = `エラー: 2つ目のデータに X 軸列 "${xName}" がありません`;
+      return;
+    }
+    twin = { dataset: ds, path: selected, xIndex };
+    updateTwinTitle();
+    statusEl.textContent = "";
+    render();
+  } catch (err) {
+    statusEl.textContent = `エラー: ${err}`;
+  }
+}
+
 // File メニュー（⌘O/⌘C/⌘F/⌘E/⌥⌘F）からの操作。フォーカス中ウィンドウにのみ届く。
 function menuAction(action: string) {
   if (action === "open") {
@@ -302,6 +359,10 @@ function menuAction(action: string) {
   }
   if (action === "axes") {
     openAxesWindow();
+    return;
+  }
+  if (action === "add-twin-data") {
+    addTwinData();
     return;
   }
   if (!currentPath || !current) return;
@@ -384,6 +445,9 @@ window.addEventListener("keydown", (e) => {
   if (key === "r" && e.altKey && !e.shiftKey) {
     e.preventDefault();
     toggleOutliers();
+  } else if (key === "d" && e.altKey && e.shiftKey) {
+    e.preventDefault();
+    addTwinData();
   } else if (key === "g" && e.altKey && e.shiftKey) {
     e.preventDefault();
     openAxesWindow();
@@ -447,6 +511,8 @@ async function loadDataset(path: string, duplicateInit?: DuplicateInit | null) {
     await invoke("mark_window_loaded");
     titleEl.textContent = current.display_name ?? current.name;
     setupAxisSelectors(current);
+    twin = null;
+    updateTwinTitle();
     if (duplicateInit) applyDuplicateInit(duplicateInit);
     render();
   } catch (err) {
@@ -501,17 +567,35 @@ listen<AxesApply>("axes-apply", (e) => {
   xSelect.selectedIndex = xIndex;
   ySelect.selectedIndex = ys[ys.length - 1];
   yAxisIndices = ys;
-  render();
+  render({ xRange: e.payload.xRange, yRanges: e.payload.yRanges, twinYRange: e.payload.twinYRange });
 }, { target: appWindow.label }).catch(() => {});
 
 function openAxesWindow() {
   if (!current) return;
+  const gd = plotEl as PlotElementWithHistory;
+  const yRanges = yAxisIndices.map((_, i) => {
+    const layout = gd._fullLayout as PlotElementWithHistory["_fullLayout"] & Record<string, PlotAxisLayout>;
+    const key = i === 0 ? "yaxis" : `yaxis${i + 1}`;
+    return readAxisNumericRange(layout?.[key]);
+  });
+  const twinAxisKey = `yaxis${yAxisIndices.length + 1}`;
+  const layout = gd._fullLayout as PlotElementWithHistory["_fullLayout"] & Record<string, PlotAxisLayout>;
+  const xName = current.columns[Number(xSelect.value)];
+  const bottomYName = current.columns[yAxisIndices[yAxisIndices.length - 1] ?? Number(ySelect.value)];
+  const twinXIndex = twin?.dataset.columns.indexOf(xName) ?? -1;
+  const twinYIndex = twin && twinXIndex >= 0
+    ? chooseTwinYIndex(twin.dataset, bottomYName, xName)
+    : -1;
   invoke("open_axes_window", {
     sourceLabel: appWindow.label,
     name: current.display_name ?? current.name,
     columns: current.columns,
     xIndex: Math.max(0, xSelect.selectedIndex),
     yIndices: yAxisIndices.length ? yAxisIndices : [Math.max(0, ySelect.selectedIndex)],
+    xRange: readAxisNumericRange(gd._fullLayout?.xaxis),
+    yRanges,
+    twinYName: twin && twinYIndex >= 0 ? twin.dataset.columns[twinYIndex] : null,
+    twinYRange: readAxisNumericRange(layout?.[twinAxisKey]),
   }).catch((err) => {
     statusEl.textContent = `エラー: ${err}`;
   });
@@ -823,9 +907,18 @@ function toggleOutliers() {
   if (current) render(xRange ? { axis: "x", range: xRange } : undefined);
 }
 
-// preserve を渡すと、その軸だけ現在の表示範囲を維持し、もう片方を再フィットする。
-function render(preserve?: { axis: "x" | "y"; range: [number, number] }) {
+function normalizeRangeState(rangeState?: RangeState | { axis: "x" | "y"; range: [number, number] }): RangeState {
+  if (!rangeState) return {};
+  if ("axis" in rangeState) {
+    return rangeState.axis === "x" ? { xRange: rangeState.range } : { yRanges: [rangeState.range] };
+  }
+  return rangeState;
+}
+
+// rangeState を渡すと、指定された軸だけ表示範囲を固定し、未指定の軸は再フィットする。
+function render(rangeState?: RangeState | { axis: "x" | "y"; range: [number, number] }) {
   if (!current) return;
+  const fixedRanges = normalizeRangeState(rangeState);
   const xi = Number(xSelect.value);
   if (!yAxisIndices.length) yAxisIndices = [Number(ySelect.value)];
   const validYIndices = yAxisIndices.filter((i) => i >= 0 && i < current!.columns.length);
@@ -838,12 +931,10 @@ function render(preserve?: { axis: "x" | "y"; range: [number, number] }) {
   const textColor = themeVar("--color-text");
   const fontFamily = themeVar("--font-family");
 
-  const keep = (which: "x" | "y", index = 0) =>
-    preserve &&
-    preserve.axis === which &&
-    (which === "x" || index === 0)
-      ? { autorange: false, range: preserve.range }
-      : { autorange: true };
+  const keep = (which: "x" | "y", index = 0) => {
+    const range = which === "x" ? fixedRanges.xRange : fixedRanges.yRanges?.[index];
+    return range ? { autorange: false, range } : { autorange: true };
+  };
 
   // matplotlib 風: グリッド/ゼロラインなし、プロット領域を四角い枠で囲む
   const axis = (title: string, which: "x" | "y", titleStandoff = 4, index = 0) => ({
@@ -875,7 +966,37 @@ function render(preserve?: { axis: "x" | "y"; range: [number, number] }) {
     yaxis: i === 0 ? "y" : `y${i + 1}`,
     showlegend: false,
   }));
-  const yAxes = Object.fromEntries(validYIndices.map((yi, i) => {
+  const bottomAxisIndex = validYIndices.length;
+  const bottomXRef = bottomAxisIndex === 1 ? "x" : `x${bottomAxisIndex}`;
+  const bottomYRef = bottomAxisIndex === 1 ? "y" : `y${bottomAxisIndex}`;
+  const twinAxisIndex = validYIndices.length + 1;
+  const twinYRef = `y${twinAxisIndex}`;
+  const twinLayoutKey = `yaxis${twinAxisIndex}`;
+  const twinInfo = (() => {
+    if (!twin) return null;
+    const xName = current!.columns[xi];
+    const twinXIndex = twin.dataset.columns.indexOf(xName);
+    if (twinXIndex < 0) return null;
+    const bottomYIndex = validYIndices[validYIndices.length - 1];
+    const twinYIndex = chooseTwinYIndex(twin.dataset, current!.columns[bottomYIndex], xName);
+    return { dataset: twin.dataset, xIndex: twinXIndex, yIndex: twinYIndex };
+  })();
+  const twinTrace = (() => {
+    if (!twinInfo) return null;
+    const twinRows = removeOutliersByAxes(twinInfo.dataset.rows, twinInfo.xIndex, [twinInfo.yIndex]);
+    return {
+      x: twinRows.map((r) => r[twinInfo.xIndex]),
+      y: twinRows.map((r) => r[twinInfo.yIndex]),
+      type: "scattergl",
+      mode: plotMode,
+      line: { width: 2.5, color: "#d43c32" },
+      marker: { size: 4, color: "#d43c32" },
+      xaxis: bottomXRef,
+      yaxis: twinYRef,
+      showlegend: false,
+    };
+  })();
+  const yAxes: Record<string, Record<string, unknown>> = Object.fromEntries(validYIndices.map((yi, i) => {
     const top = 1 - i * (panelHeight + gap);
     const bottom = top - panelHeight;
     const key = i === 0 ? "yaxis" : `yaxis${i + 1}`;
@@ -884,6 +1005,23 @@ function render(preserve?: { axis: "x" | "y"; range: [number, number] }) {
       domain: [bottom, top],
     }];
   }));
+  if (twinTrace && twinInfo) {
+    const twinYName = twinInfo.dataset.columns[twinInfo.yIndex];
+    yAxes[twinLayoutKey] = {
+      ...axis(twinYName, "y", 5),
+      ...(fixedRanges.twinYRange ? { autorange: false, range: fixedRanges.twinYRange } : {}),
+      overlaying: bottomYRef,
+      side: "right",
+      tickfont: { color: "#d43c32" },
+      title: {
+        text: twinYName,
+        standoff: 5,
+        font: { color: "#d43c32" },
+      },
+      linecolor: "#d43c32",
+      tickcolor: "#d43c32",
+    };
+  }
   const xAxes = Object.fromEntries(validYIndices.map((_, i) => {
     const key = i === 0 ? "xaxis" : `xaxis${i + 1}`;
     const yRef = i === 0 ? "y" : `y${i + 1}`;
@@ -899,9 +1037,9 @@ function render(preserve?: { axis: "x" | "y"; range: [number, number] }) {
 
   Plotly.react(
     plotEl,
-    traces,
+    twinTrace ? [...traces, twinTrace] : traces,
     {
-      margin: { l: 60, r: 20, t: 20, b: 50 },
+      margin: { l: 60, r: twinTrace ? 76 : 20, t: 20, b: 50 },
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: "rgba(0,0,0,0)",
       font: { color: textColor, family: fontFamily },

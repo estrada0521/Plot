@@ -24,14 +24,25 @@
         <div class="axes-grid axes-head">
           <span>Axis</span>
           <span>Data</span>
+          <span>Min</span>
+          <span>Max</span>
           <span></span>
         </div>
         <div class="axes-grid axes-row">
           <span class="axes-axis">X</span>
           <select id="x-axis-select"></select>
+          <input id="x-min-input" class="axes-range-input" type="number" />
+          <input id="x-max-input" class="axes-range-input" type="number" />
           <span></span>
         </div>
         <div id="y-axis-list" class="axes-list"></div>
+        <div id="twin-y-row" class="axes-grid axes-row axes-twin-row">
+          <span class="axes-axis">Y right</span>
+          <span id="twin-y-name" class="axes-twin-name"></span>
+          <input id="twin-y-min-input" class="axes-range-input axes-twin-input" type="number" />
+          <input id="twin-y-max-input" class="axes-range-input axes-twin-input" type="number" />
+          <span></span>
+        </div>
       </main>
       <footer class="filter-actions">
         <button id="add-y-btn" class="filter-btn filter-btn-reset">+ Y</button>

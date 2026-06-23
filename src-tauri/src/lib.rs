@@ -58,6 +58,10 @@ struct AxesInit {
     columns: Vec<String>,
     x_index: usize,
     y_indices: Vec<usize>,
+    x_range: Option<(f64, f64)>,
+    y_ranges: Vec<Option<(f64, f64)>>,
+    twin_y_name: Option<String>,
+    twin_y_range: Option<(f64, f64)>,
 }
 #[derive(Default)]
 struct AxesInits(Mutex<HashMap<String, AxesInit>>);
@@ -513,6 +517,7 @@ const MENU_COPY_PATH: &str = "copy-path";
 const MENU_FILTER: &str = "filter-data";
 const MENU_TOGGLE_OUTLIERS: &str = "toggle-outliers";
 const MENU_AXES: &str = "axes";
+const MENU_ADD_TWIN_DATA: &str = "add-twin-data";
 
 /// File メニューの操作を、フォーカス中のウィンドウのフロントへ通知する
 /// （対象ファイルはフロントが保持しているため）。
@@ -536,6 +541,10 @@ fn open_axes_window(
     columns: Vec<String>,
     x_index: usize,
     y_indices: Vec<usize>,
+    x_range: Option<(f64, f64)>,
+    y_ranges: Vec<Option<(f64, f64)>>,
+    twin_y_name: Option<String>,
+    twin_y_range: Option<(f64, f64)>,
     inits: State<AxesInits>,
 ) -> Result<(), String> {
     let label = format!("axes-{source_label}");
@@ -548,6 +557,10 @@ fn open_axes_window(
                 columns,
                 x_index,
                 y_indices,
+                x_range,
+                y_ranges,
+                twin_y_name,
+                twin_y_range,
             },
         );
     }
@@ -974,6 +987,13 @@ pub fn run() {
                 true,
                 Some("CmdOrCtrl+Alt+Shift+G"),
             )?;
+            let twin_data_item = MenuItem::with_id(
+                handle,
+                MENU_ADD_TWIN_DATA,
+                "Add Twin Data…",
+                true,
+                Some("CmdOrCtrl+Alt+Shift+D"),
+            )?;
             let file_menu = SubmenuBuilder::new(handle, "File")
                 .item(&new_window)
                 .item(&duplicate_window)
@@ -987,6 +1007,7 @@ pub fn run() {
             let tools_menu = SubmenuBuilder::new(handle, "Tools")
                 .item(&filter_item)
                 .item(&axes_item)
+                .item(&twin_data_item)
                 .item(&outliers_item)
                 .build()?;
             let next_window = MenuItem::with_id(
@@ -1070,6 +1091,7 @@ pub fn run() {
             MENU_COPY_PATH => dispatch_menu_action(app, "copy-path"),
             MENU_FILTER => dispatch_menu_action(app, "filter"),
             MENU_AXES => dispatch_menu_action(app, "axes"),
+            MENU_ADD_TWIN_DATA => dispatch_menu_action(app, "add-twin-data"),
             MENU_TOGGLE_OUTLIERS => dispatch_menu_action(app, "toggle-outliers"),
             _ => {}
         })
