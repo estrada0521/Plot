@@ -31,17 +31,20 @@ A lightweight launcher-style macOS app that simply graphs array data such as csv
 
 ## Setup
 
+Requires Rust, Node.js/pnpm, and Xcode Command Line Tools.
+
 In a terminal, move into this folder and run the following two commands in order:
 
 ```bash
-npm install          # first time only — fetches dependencies
-npm run app:install  # builds, installs into /Applications, and launches
+pnpm install         # first time only — fetches dependencies
+pnpm app:install  # builds, installs into /Applications, and launches
 ```
 
-After that, just run `npm run app:install` to update to the latest build.
+After that, just run `pnpm app:install` to update to the latest build.
 
 ## Stack
 
-- [Tauri v2](https://tauri.app/) (Rust backend)
-- Vite + TypeScript
+- AppKit + WKWebView (macOS 13.3+)
+- Rust (file parsing)
+- TypeScript + esbuild
 - [Plotly.js](https://plotly.com/javascript/) (WebGL `scattergl`)

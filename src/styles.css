@@ -589,3 +589,10 @@ body.window-blurred .twin-title {
 .filter-btn-reset {
   margin-right: auto;
 }
+
+body:has(#panel) > .toolbar {
+  position: absolute;
+  top: 0;
+  left: -100000px;
+  visibility: hidden;
+}

@@ -1,8 +1,8 @@
-import { invoke } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { LogicalSize, PhysicalPosition } from "@tauri-apps/api/dpi";
-import { listen } from "@tauri-apps/api/event";
+import { invoke } from "./native";
+import { open, save } from "./native";
+import { getCurrentWindow } from "./native";
+import { LogicalSize, PhysicalPosition } from "./native";
+import { listen } from "./native";
 import { applyTheme, bindThemeUpdates } from "./theme-util";
 import Plotly from "plotly.js-dist-min";
 
@@ -199,16 +199,8 @@ const resizeObserver = new ResizeObserver(() => {
 });
 resizeObserver.observe(plotEl);
 
-// plot パネルの実寸を Rust に報告（タイル配置でフッターを重ねて詰めるのに使う）
-new ResizeObserver(() => {
-  invoke("report_panel_size", {
-    width: panelEl.offsetWidth,
-    height: panelEl.offsetHeight,
-  }).catch(() => {});
-}).observe(panelEl);
-
-// ウィンドウを「パネル∪フッター」の外接矩形に吸着させる。
-// macOS の setContentSize は左上を固定して伸縮するため、リサイズ中は下端（左下）が
+// プロットの実寸をネイティブウィンドウに反映する。
+// リサイズ中は下端（左下）が
 // 画面上で動かないよう、サイズ変更後に上端位置を補正する（＝左下を固定）。
 let anchorLeftPhys = 0;
 let anchorBottomPhys = 0;
@@ -221,9 +213,9 @@ async function applyFit() {
     return;
   }
   fitRunning = true;
-  const footerGap = parseFloat(themeVar("--panel-footer-gap")) || 0;
-  const w = Math.ceil(Math.max(panelEl.offsetWidth, footerEl.offsetWidth));
-  const h = Math.ceil(panelEl.offsetHeight + footerEl.offsetHeight + footerGap);
+
+  const w = Math.ceil(panelEl.offsetWidth);
+  const h = Math.ceil(panelEl.offsetHeight);
   await appWindow.setSize(new LogicalSize(w, h));
   if (resizeMode) {
     const topPhys = Math.round(anchorBottomPhys - h * scale);
@@ -238,9 +230,42 @@ async function applyFit() {
 function fitWindow() {
   applyFit();
 }
-// フッター幅が変わった時（X/Y選択の出現など）はウィンドウをコンテンツに吸着させる。
-new ResizeObserver(() => fitWindow()).observe(footerEl);
+new ResizeObserver(() => fitWindow()).observe(panelEl);
 fitWindow();
+
+let toolbarUpdatePending = false;
+function syncToolbar() {
+  if (toolbarUpdatePending) return;
+  toolbarUpdatePending = true;
+  requestAnimationFrame(() => {
+    toolbarUpdatePending = false;
+    invoke("update_toolbar", {
+      html: footerEl.outerHTML,
+      theme: document.documentElement.dataset.theme,
+      values: { "x-select": xSelect.value, "y-select": ySelect.value },
+      width: Math.ceil(footerEl.offsetWidth),
+      height: Math.ceil(footerEl.offsetHeight),
+      gap: parseFloat(themeVar("--panel-footer-gap")),
+    }).catch(console.error);
+  });
+}
+new MutationObserver(syncToolbar).observe(footerEl, { subtree: true, childList: true, attributes: true, characterData: true });
+new MutationObserver(syncToolbar).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+footerEl.addEventListener("change", syncToolbar);
+listen("toolbar-refresh", syncToolbar);
+listen<{ id: string; value?: string }>("toolbar-action", ({ payload }) => {
+  const element = document.getElementById(payload.id);
+  if (element instanceof HTMLSelectElement) {
+    element.value = payload.value ?? "";
+    element.dispatchEvent(new Event("change"));
+  } else if (element instanceof HTMLButtonElement) element.click();
+  syncToolbar();
+});
+listen<KeyboardEventInit>("toolbar-key", ({ payload }) => {
+  window.dispatchEvent(new KeyboardEvent("keydown", payload));
+  syncToolbar();
+});
+syncToolbar();
 
 // 左下固定の前提で、上辺=高さ / 右辺=幅 / 右上角=両方 を伸縮。
 // 計算は screen 座標で行い、ウィンドウ移動による座標ブレを排除する。
@@ -438,6 +463,7 @@ function cycleAxis(sel: HTMLSelectElement, dir: number) {
   if (!current || n === 0) return;
   sel.selectedIndex = (sel.selectedIndex + dir + n) % n;
   changeAxis(sel === xSelect ? "x" : "y");
+  syncToolbar();
 }
 window.addEventListener("keydown", (e) => {
   if (!e.metaKey || e.ctrlKey) return;

@@ -29,15 +29,18 @@ csv / dat / ras / SPEC txt 等の配列データをグラフ表示するだけ�
 
 
 ## Setup
+
+Rust、Node.js/pnpm、Xcode Command Line Toolsが必要です。
 ターミナルでこのフォルダに移動し、次の2つを順に実行してください
 
 ```bash
-npm install          # 初回のみ。必要なものを取得
-npm run app:install  # ビルドして /Applications に入れ、起動
+pnpm install         # 初回のみ。必要なものを取得
+pnpm app:install  # ビルドして /Applications に入れ、起動
 ```
-2回目以降は `npm run app:install` だけで最新版に入れ替わります。
+2回目以降は `pnpm app:install` だけで最新版に入れ替わります。
 
 ## Stack
-- [Tauri v2](https://tauri.app/)（Rust Backend）
-- Vite + TypeScript
+- AppKit + WKWebView（macOS 13.3以降）
+- Rust（ファイル解析）
+- TypeScript + esbuild
 - [Plotly.js](https://plotly.com/javascript/)（WebGL  `scattergl`）

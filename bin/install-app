@@ -1,39 +1,8 @@
 #!/usr/bin/env bash
-# 最新ビルドを /Applications に一本化してインストールする。
-# - 起動中のアプリを終了
-# - リリースビルド
-# - 旧 /Applications/Plots.app を削除
-# - 新ビルドを /Applications へ移動（ビルドディレクトリ側は残さない＝重複防止）
-# - 起動
 set -euo pipefail
 cd "$(dirname "$0")/.."
-
-APP_NAME="Plots.app"
-BUILD_APP="src-tauri/target/release/bundle/macos/${APP_NAME}"
-DEST="/Applications/${APP_NAME}"
-
-# 1. 起動中インスタンスを確実に終了（quit が効かない場合に備え強制終了も）
+./bin/build-app
 osascript -e 'tell application "Plots" to quit' >/dev/null 2>&1 || true
-pkill -f "Plots.app/Contents/MacOS/plots" 2>/dev/null || true
-sleep 0.5
-
-# 2. リリースビルド
-npm run tauri -- build --bundles app
-
-if [ ! -d "${BUILD_APP}" ]; then
-  echo "error: build output not found: ${BUILD_APP}" >&2
-  exit 1
-fi
-
-# 3. 旧インストールを削除（/Applications を一本化）
-rm -rf "${DEST}"
-
-# 4. 新ビルドを /Applications へ移動（target 側に重複を残さない）
-mv "${BUILD_APP}" "${DEST}"
-
-# 5. 念のため target 配下の旧 .app も掃除
-rm -rf "src-tauri/target/release/bundle/macos/"*.app 2>/dev/null || true
-
-# 6. 新規インスタンスとして起動（確実に新ビルドを立ち上げる）
-open -n "${DEST}"
-echo "Installed and launched: ${DEST}"
+pkill -f 'Plots.app/Contents/MacOS/plots' 2>/dev/null || true
+ditto build/Plots.app /Applications/Plots.app
+open -n /Applications/Plots.app

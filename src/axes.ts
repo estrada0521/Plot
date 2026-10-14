@@ -1,6 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
-import { emitTo } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "./native";
+import { emitTo } from "./native";
+import { getCurrentWindow } from "./native";
 import { applyTheme, bindThemeUpdates } from "./theme-util";
 
 interface AxesInit {

@@ -1,4 +1,4 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "./native";
 import { bindThemeUpdates, loadThemePref, setThemePref, type ThemePref } from "./theme-util";
 
 const win = getCurrentWindow();

@@ -9,3 +9,6 @@ app-icon.png
 .claude/settings.local.json
 .agent-window/
 icon-candidates/
+
+build/
+target/
