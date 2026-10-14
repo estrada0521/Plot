@@ -20,6 +20,7 @@ static NSString *JSON(id value) {
     if (!self.parentWindow && event.type == NSEventTypeLeftMouseDown &&
         point.x > 78 && point.x < self.frame.size.width - 10 &&
         point.y > self.frame.size.height - 28 && point.y < self.frame.size.height - 10) {
+        [self makeKeyAndOrderFront:nil];
         [self performWindowDragWithEvent:event];
         return;
     }
@@ -31,26 +32,37 @@ static NSString *JSON(id value) {
 @interface PlotController : NSObject <NSWindowDelegate, WKScriptMessageHandlerWithReply, WKNavigationDelegate>
 @property(nonatomic, weak) PlotsApp *app;
 @property(nonatomic, strong) PlotWindow *window;
-@property(nonatomic, strong) PlotWindow *toolbar;
 @property(nonatomic, strong) WKWebView *web;
-@property(nonatomic, strong) WKWebView *toolbarWeb;
 @property(nonatomic, copy) NSString *label;
 @property(nonatomic, copy) NSString *pendingPath;
 @property(nonatomic, strong) NSDictionary *initial;
 @property(nonatomic) BOOL loaded;
-@property(nonatomic) CGFloat toolbarGap;
+@property(nonatomic) BOOL isPlot;
 - (instancetype)initWithApp:(PlotsApp *)app label:(NSString *)label page:(NSString *)page size:(NSSize)size;
 - (void)event:(NSString *)event payload:(id)payload;
-- (void)placeToolbar;
 @end
 
-@interface PlotsApp : NSObject <NSApplicationDelegate>
+@interface PlotsApp : NSObject <NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandlerWithReply, WKNavigationDelegate>
 @property(nonatomic, strong) NSMutableDictionary<NSString *, PlotController *> *controllers;
 @property(nonatomic, strong) WKWebsiteDataStore *dataStore;
 @property(nonatomic) NSUInteger sequence;
+@property(nonatomic, strong) PlotWindow *toolbar;
+@property(nonatomic, strong) WKWebView *toolbarWeb;
+@property(nonatomic, weak) PlotController *toolbarTarget;
+@property(nonatomic) CGFloat toolbarGap;
 - (PlotController *)newPlot:(NSString *)path initial:(NSDictionary *)initial;
 - (PlotController *)active;
 - (void)menu:(NSMenuItem *)sender;
+- (void)selectPlot:(PlotController *)plot;
+- (void)syncFocus;
+- (void)placeToolbar;
+- (void)updateToolbar:(NSDictionary *)state;
+@end
+
+@interface ToolbarWindow : PlotWindow
+@end
+@implementation ToolbarWindow
+- (BOOL)canBecomeMainWindow { return NO; }
 @end
 
 @implementation PlotController
@@ -81,19 +93,13 @@ static NSString *JSON(id value) {
     if (!self) return nil;
     self.app = app;
     self.label = label;
-    self.toolbarGap = 6;
     self.window = [self makeWindow:size];
     self.web = [self makeWeb];
     self.window.contentView = self.web;
     NSURL *root = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"web"];
     [self.web loadFileURL:[root URLByAppendingPathComponent:page] allowingReadAccessToURL:root];
-    if ([page isEqual:@"index.html"]) {
-        self.toolbar = [self makeWindow:NSMakeSize(600, 34)];
-        self.toolbarWeb = [self makeWeb];
-        self.toolbar.contentView = self.toolbarWeb;
-        [self.toolbarWeb loadFileURL:[root URLByAppendingPathComponent:@"toolbar.html"] allowingReadAccessToURL:root];
-        [self.window addChildWindow:self.toolbar ordered:NSWindowAbove];
-    } else {
+    self.isPlot = [page isEqual:@"index.html"];
+    if (!self.isPlot) {
         self.window.styleMask = NSWindowStyleMaskBorderless | NSWindowStyleMaskResizable;
         self.window.minSize = NSMakeSize(220, 150);
     }
@@ -103,38 +109,27 @@ static NSString *JSON(id value) {
     NSString *script = [NSString stringWithFormat:@"window.plotsEvent?.(%@,%@)", JSON(event), JSON(payload)];
     [self.web evaluateJavaScript:script completionHandler:nil];
 }
-- (void)placeToolbar {
-    if (!self.toolbar) return;
-    NSRect frame = self.toolbar.frame;
-    frame.origin = NSMakePoint(NSMinX(self.window.frame), NSMinY(self.window.frame) - self.toolbarGap - frame.size.height);
-    [self.toolbar setFrame:frame display:YES];
-}
 - (void)windowDidMove:(NSNotification *)notification {
-    if (notification.object == self.window) [self placeToolbar];
+    if (self.app.toolbarTarget == self) [self.app placeToolbar];
 }
 - (void)windowDidResize:(NSNotification *)notification {
-    if (notification.object == self.window) [self placeToolbar];
+    if (self.app.toolbarTarget == self) [self.app placeToolbar];
 }
 - (void)windowDidBecomeKey:(NSNotification *)notification {
+    [self.app selectPlot:self.isPlot ? self : nil];
     [self event:@"focus" payload:@YES];
 }
 - (void)windowDidResignKey:(NSNotification *)notification {
     dispatch_async(dispatch_get_main_queue(), ^{
-        BOOL focused = NSApp.keyWindow == self.window || NSApp.keyWindow == self.toolbar;
-        [self event:@"focus" payload:@(focused)];
+        [self.app syncFocus];
+        [self event:@"focus" payload:@(NSApp.isActive && (NSApp.keyWindow == self.window || self.app.toolbarTarget == self))];
     });
 }
-- (void)windowWillMiniaturize:(NSNotification *)notification { [self.toolbar orderOut:nil]; }
-- (void)windowDidDeminiaturize:(NSNotification *)notification {
-    if (self.toolbar) {
-        [self.window addChildWindow:self.toolbar ordered:NSWindowAbove];
-        [self placeToolbar];
-        [self.toolbar orderFront:nil];
-    }
+- (void)windowWillMiniaturize:(NSNotification *)notification {
+    if (self.app.toolbarTarget == self) [self.app selectPlot:nil];
 }
 - (void)windowWillClose:(NSNotification *)notification {
-    if (notification.object == self.toolbar) return;
-    [self.toolbar close];
+    if (self.app.toolbarTarget == self) [self.app selectPlot:nil];
     if ([self.label hasPrefix:@"filter-"]) {
         NSString *source = self.initial[@"source_label"];
         [self.app.controllers[source] event:@"filter-reset" payload:NSNull.null];
@@ -143,7 +138,6 @@ static NSString *JSON(id value) {
         [self.app.controllers[[prefix stringByAppendingString:self.label]].window close];
     }
     [self.web.configuration.userContentController removeScriptMessageHandlerForName:@"plots" contentWorld:WKContentWorld.pageWorld];
-    [self.toolbarWeb.configuration.userContentController removeScriptMessageHandlerForName:@"plots" contentWorld:WKContentWorld.pageWorld];
     [self.app.controllers removeObjectForKey:self.label];
 }
 - (void)webView:(WKWebView *)web decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:(void (^)(WKNavigationActionPolicy))handler {
@@ -178,14 +172,14 @@ static NSString *JSON(id value) {
         result = @(self.window.level == NSFloatingWindowLevel);
     } else if ([command isEqual:@"pin"]) {
         self.window.level = [args[@"value"] boolValue] ? NSFloatingWindowLevel : NSNormalWindowLevel;
-        self.toolbar.level = self.window.level;
+        if (self.app.toolbarTarget == self) self.app.toolbar.level = self.window.level;
     } else if ([command isEqual:@"resize"]) {
         NSRect frame = self.window.frame;
         CGFloat top = NSMaxY(frame);
         frame.size = NSMakeSize([args[@"width"] doubleValue], [args[@"height"] doubleValue]);
         frame.origin.y = top - frame.size.height;
         [self.window setFrame:frame display:YES];
-        [self placeToolbar];
+        if (self.app.toolbarTarget == self) [self.app placeToolbar];
     } else if ([command isEqual:@"scale_factor"]) {
         result = @(self.window.backingScaleFactor);
     } else if ([command isEqual:@"outer_position"]) {
@@ -197,7 +191,7 @@ static NSString *JSON(id value) {
     } else if ([command isEqual:@"position"]) {
         CGFloat scale = self.window.backingScaleFactor;
         [self.window setFrameTopLeftPoint:NSMakePoint([args[@"x"] doubleValue] / scale, NSMaxY(NSScreen.screens.firstObject.frame) - [args[@"y"] doubleValue] / scale)];
-        [self placeToolbar];
+        if (self.app.toolbarTarget == self) [self.app placeToolbar];
     } else if ([command isEqual:@"emit"]) {
         NSString *target = args[@"target"];
         NSArray *receivers = target ? (self.app.controllers[target] ? @[self.app.controllers[target]] : @[]) : self.app.controllers.allValues;
@@ -261,25 +255,98 @@ static NSString *JSON(id value) {
         }
         [popup.window makeKeyAndOrderFront:nil];
     } else if ([command isEqual:@"update_toolbar"]) {
-        self.toolbarGap = [args[@"gap"] doubleValue];
-        [self.toolbar setContentSize:NSMakeSize([args[@"width"] doubleValue], [args[@"height"] doubleValue])];
-        [self placeToolbar];
-        [self.toolbarWeb evaluateJavaScript:[NSString stringWithFormat:@"window.plotsToolbar?.(%@)", JSON(args)] completionHandler:nil];
-    } else if ([command isEqual:@"toolbar_ready"]) {
-        [self event:@"toolbar-refresh" payload:NSNull.null];
-    } else if ([command isEqual:@"toolbar_action"]) {
-        [self event:@"toolbar-action" payload:args];
-    } else if ([command isEqual:@"toolbar_key"]) {
-        [self event:@"toolbar-key" payload:args];
+        if (self.app.toolbarTarget == self) [self.app updateToolbar:args];
     } else error = [@"Unknown native command: " stringByAppendingString:command];
     reply(result ?: NSNull.null, error);
 }
 @end
 
 @implementation PlotsApp
+- (void)makeToolbar {
+    self.toolbarGap = 6;
+    self.toolbar = [[ToolbarWindow alloc] initWithContentRect:NSMakeRect(0, 0, 600, 34) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+    self.toolbar.delegate = self;
+    self.toolbar.title = @"Plot Controls";
+    self.toolbar.opaque = NO;
+    self.toolbar.backgroundColor = NSColor.clearColor;
+    self.toolbar.hasShadow = NO;
+    self.toolbar.releasedWhenClosed = NO;
+    WKWebViewConfiguration *config = [WKWebViewConfiguration new];
+    config.websiteDataStore = self.dataStore;
+    [config.userContentController addScriptMessageHandlerWithReply:self contentWorld:WKContentWorld.pageWorld name:@"plots"];
+    [config.userContentController addUserScript:[[WKUserScript alloc] initWithSource:@"window.plotsLabel='toolbar';" injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES]];
+    self.toolbarWeb = [[WKWebView alloc] initWithFrame:self.toolbar.contentView.bounds configuration:config];
+    self.toolbarWeb.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    self.toolbarWeb.navigationDelegate = self;
+    [self.toolbarWeb setValue:@NO forKey:@"drawsBackground"];
+    self.toolbar.contentView = self.toolbarWeb;
+    NSURL *root = [NSBundle.mainBundle.resourceURL URLByAppendingPathComponent:@"web"];
+    [self.toolbarWeb loadFileURL:[root URLByAppendingPathComponent:@"toolbar.html"] allowingReadAccessToURL:root];
+}
+- (void)selectPlot:(PlotController *)plot {
+    if (!NSApp.isActive) plot = nil;
+    if (plot == self.toolbarTarget) return;
+    PlotController *previous = self.toolbarTarget;
+    [previous.window removeChildWindow:self.toolbar];
+    [self.toolbar orderOut:nil];
+    self.toolbarTarget = plot;
+    [previous event:@"focus" payload:@NO];
+    if (plot) {
+        self.toolbar.level = plot.window.level;
+        [plot event:@"focus" payload:@YES];
+        [plot event:@"toolbar-refresh" payload:NSNull.null];
+    }
+}
+- (void)syncFocus {
+    if (!NSApp.isActive) { [self selectPlot:nil]; return; }
+    if (NSApp.keyWindow == self.toolbar) return;
+    PlotController *active = [self active];
+    [self selectPlot:active.isPlot && !active.window.isMiniaturized ? active : nil];
+}
+- (void)applicationDidBecomeActive:(NSNotification *)notification { [self syncFocus]; }
+- (void)applicationDidResignActive:(NSNotification *)notification { [self selectPlot:nil]; }
+- (void)windowDidBecomeKey:(NSNotification *)notification {
+    [self.toolbarTarget event:@"focus" payload:@YES];
+}
+- (void)windowDidResignKey:(NSNotification *)notification {
+    dispatch_async(dispatch_get_main_queue(), ^{ [self syncFocus]; });
+}
+- (void)placeToolbar {
+    PlotController *plot = self.toolbarTarget;
+    if (!plot) return;
+    NSRect frame = self.toolbar.frame;
+    frame.origin = NSMakePoint(NSMinX(plot.window.frame), NSMinY(plot.window.frame) - self.toolbarGap - frame.size.height);
+    [self.toolbar setFrame:frame display:YES];
+}
+- (void)updateToolbar:(NSDictionary *)state {
+    if (!self.toolbarTarget || !NSApp.isActive) return;
+    self.toolbarGap = [state[@"gap"] doubleValue];
+    [self.toolbar setContentSize:NSMakeSize([state[@"width"] doubleValue], [state[@"height"] doubleValue])];
+    [self placeToolbar];
+    PlotController *target = self.toolbarTarget;
+    [self.toolbarWeb evaluateJavaScript:[NSString stringWithFormat:@"window.plotsToolbar?.(%@)", JSON(state)] completionHandler:^(id result, NSError *error) {
+        if (!error && NSApp.isActive && self.toolbarTarget == target) {
+            if (self.toolbar.parentWindow != target.window) [target.window addChildWindow:self.toolbar ordered:NSWindowAbove];
+            [self.toolbar orderFront:nil];
+        }
+    }];
+}
+- (void)webView:(WKWebView *)web decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:(void (^)(WKNavigationActionPolicy))handler {
+    handler(action.request.URL.isFileURL ? WKNavigationActionPolicyAllow : WKNavigationActionPolicyCancel);
+}
+- (void)userContentController:(WKUserContentController *)controller didReceiveScriptMessage:(WKScriptMessage *)message replyHandler:(void (^)(id, NSString *))reply {
+    NSString *command = message.body[@"command"];
+    NSDictionary *args = message.body[@"args"];
+    if ([command isEqual:@"toolbar_ready"]) [self.toolbarTarget event:@"toolbar-refresh" payload:NSNull.null];
+    else if ([command isEqual:@"toolbar_action"]) [self.toolbarTarget event:@"toolbar-action" payload:args];
+    else if ([command isEqual:@"toolbar_key"]) [self.toolbarTarget event:@"toolbar-key" payload:args];
+    else { reply(nil, [@"Unknown toolbar command: " stringByAppendingString:command]); return; }
+    reply(NSNull.null, nil);
+}
 - (PlotController *)active {
+    if (NSApp.keyWindow == self.toolbar) return self.toolbarTarget;
     for (PlotController *controller in self.controllers.allValues) {
-        if (NSApp.keyWindow == controller.window || NSApp.keyWindow == controller.toolbar) return controller;
+        if (NSApp.keyWindow == controller.window) return controller;
     }
     return nil;
 }
@@ -291,7 +358,6 @@ static NSString *JSON(id value) {
     self.controllers[controller.label] = controller;
     NSPoint top = active ? NSMakePoint(NSMinX(active.window.frame) + 28, NSMaxY(active.window.frame) - 28) : NSMakePoint(100, NSMaxY(NSScreen.screens.firstObject.visibleFrame) - 60);
     [controller.window setFrameTopLeftPoint:top];
-    [controller placeToolbar];
     [controller.window makeKeyAndOrderFront:nil];
     return controller;
 }
@@ -323,6 +389,7 @@ static NSString *JSON(id value) {
         root.submenu = menu; [bar addItem:root];
     }
     NSApp.mainMenu = bar;
+    [self makeToolbar];
     if (!self.controllers.count) [self newPlot:nil initial:nil];
     [NSApp activateIgnoringOtherApps:YES];
 }
@@ -352,17 +419,17 @@ static NSString *JSON(id value) {
         CGFloat x = NSMinX(area) + 12, y = NSMaxY(area) - 12, rowHeight = 0;
         for (NSString *label in [self.controllers.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
             PlotController *controller = self.controllers[label];
-            CGFloat width = MAX(controller.window.frame.size.width, controller.toolbar.frame.size.width);
-            CGFloat height = controller.window.frame.size.height + controller.toolbarGap + controller.toolbar.frame.size.height;
+            CGFloat width = controller.window.frame.size.width;
+            CGFloat height = controller.window.frame.size.height;
             if ([action isEqual:@"arrange"] && x + width > NSMaxX(area) && x > NSMinX(area) + 12) { x = NSMinX(area) + 12; y -= rowHeight + 12; rowHeight = 0; }
-            [controller.window setFrameTopLeftPoint:NSMakePoint(x, y)]; [controller placeToolbar];
+            [controller.window setFrameTopLeftPoint:NSMakePoint(x, y)];
             if ([action isEqual:@"cascade"]) { x += 28; y -= 28; }
             else { x += width + 12; rowHeight = MAX(rowHeight, height); }
         }
     } else [active event:@"menu-action" payload:action];
 }
 - (void)application:(NSApplication *)application openFiles:(NSArray<NSString *> *)filenames {
-    NSArray *empty = [self.controllers.allValues filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(PlotController *controller, NSDictionary *bindings) { return controller.toolbar && !controller.loaded && !controller.pendingPath; }]];
+    NSArray *empty = [self.controllers.allValues filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(PlotController *controller, NSDictionary *bindings) { return controller.isPlot && !controller.loaded && !controller.pendingPath; }]];
     for (NSString *path in filenames) [self newPlot:path initial:nil];
     for (PlotController *controller in empty) [controller.window close];
     [application replyToOpenOrPrint:NSApplicationDelegateReplySuccess];

@@ -42,6 +42,8 @@ pnpm app:install  # builds, installs into /Applications, and launches
 
 After that, just run `pnpm app:install` to update to the latest build.
 
+One toolbar is shared by all plots. It appears below the focused plot, keeps the same target while you use its controls, and hides when another app is active.
+
 ## Stack
 
 - AppKit + WKWebView (macOS 13.3+)

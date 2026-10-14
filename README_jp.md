@@ -39,6 +39,8 @@ pnpm app:install  # ビルドして /Applications に入れ、起動
 ```
 2回目以降は `pnpm app:install` だけで最新版に入れ替わります。
 
+ツールバーはアプリ全体で1枚を共有し、フォーカス中のプロットの下に表示します。操作中も対象を維持し、別アプリへ移ると非表示になります。
+
 ## Stack
 - AppKit + WKWebView（macOS 13.3以降）
 - Rust（ファイル解析）
