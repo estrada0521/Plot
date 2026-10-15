@@ -1,0 +1,7 @@
+points_per_window,windows,mode,prepare_ms,metal_gpu_ms,metal_wall_ms,cg_wall_ms,combined_footprint_mib
+1000,1,lines,0.03,0.11,0.29,0.67,71.4
+3000000,1,lines,68.82,11.28,11.83,464.84,243.3
+1000000,8,lines,153.54,25.78,29.00,1035.91,262.1
+1000,1,points,0.03,0.10,0.44,0.77,73.1
+3000000,1,points,68.55,25.08,27.67,2066.58,142.1
+1000000,8,points,159.39,45.05,49.72,5588.09,229.4

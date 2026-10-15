@@ -1,7 +1,3 @@
-node_modules/
-dist/
-src-tauri/target/
-src-tauri/gen/
 .DS_Store
 app-icon.png
 
@@ -11,4 +7,3 @@ app-icon.png
 icon-candidates/
 
 build/
-target/

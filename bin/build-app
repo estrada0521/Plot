@@ -1,21 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-pnpm build
-cargo build --release
 mkdir -p build
 clang -fobjc-arc -O2 -Wall -Wextra -Wno-unused-parameter -mmacosx-version-min=13.3 \
-  -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers \
-  -framework Security -framework SystemConfiguration \
-  native/main.m target/release/libplot_data.a -o build/plot
+  -framework Cocoa -framework Metal -framework MetalKit -framework QuartzCore -framework UniformTypeIdentifiers \
+  native/main.m native/PlotData.m native/PlotRenderer.m native/PlotView.m -o build/plot
 stage="$(mktemp -d "${TMPDIR:-/tmp}/plot-build.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 app="$stage/Plot.app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/web"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp build/plot "$app/Contents/MacOS/plot"
+cp native/plot.metal "$app/Contents/Resources/plot.metal"
 cp native/Info.plist "$app/Contents/Info.plist"
 cp native/artwork/icon.icns "$app/Contents/Resources/icon.icns"
-cp -R dist/. "$app/Contents/Resources/web/"
 codesign --force --sign - "$app"
 codesign --verify --strict "$app"
 register=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
