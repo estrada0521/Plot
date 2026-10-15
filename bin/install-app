@@ -2,7 +2,4 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ./bin/build-app
-osascript -e 'tell application "Plots" to quit' >/dev/null 2>&1 || true
-pkill -f 'Plots.app/Contents/MacOS/plots' 2>/dev/null || true
-ditto build/Plots.app /Applications/Plots.app
-open -n /Applications/Plots.app
+open /Applications/Plot.app

@@ -1,7 +1,7 @@
 import { invoke } from "./native";
 
-declare global { interface Window { plotsToolbar: (state: { html: string; theme: string; values: Record<string, string> }) => void } }
-window.plotsToolbar = ({ html, theme, values }) => {
+declare global { interface Window { plotToolbar: (state: { html: string; theme: string; values: Record<string, string> }) => void } }
+window.plotToolbar = ({ html, theme, values }) => {
   document.documentElement.dataset.theme = theme;
   document.body.innerHTML = html;
   for (const [id, value] of Object.entries(values)) {

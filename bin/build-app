@@ -3,15 +3,29 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 pnpm build
 cargo build --release
-app="build/Plots.app"
-node -e "require('node:fs').rmSync('build/Plots.app', { recursive: true, force: true })"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/web"
+mkdir -p build
 clang -fobjc-arc -O2 -Wall -Wextra -Wno-unused-parameter -mmacosx-version-min=13.3 \
   -framework Cocoa -framework WebKit -framework UniformTypeIdentifiers \
   -framework Security -framework SystemConfiguration \
-  native/main.m target/release/libplots_data.a -o "$app/Contents/MacOS/plots"
+  native/main.m target/release/libplot_data.a -o build/plot
+stage="$(mktemp -d "${TMPDIR:-/tmp}/plot-build.XXXXXX")"
+trap 'rm -rf "$stage"' EXIT
+app="$stage/Plot.app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/web"
+cp build/plot "$app/Contents/MacOS/plot"
 cp native/Info.plist "$app/Contents/Info.plist"
 cp native/artwork/icon.icns "$app/Contents/Resources/icon.icns"
 cp -R dist/. "$app/Contents/Resources/web/"
 codesign --force --sign - "$app"
-printf 'Built: %s\n' "$PWD/$app"
+codesign --verify --strict "$app"
+register=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+pkill -f '^/Applications/(Plot|Plots)\.app/Contents/MacOS/(plot|plots)( |$)' 2>/dev/null || true
+for installed in /Applications/Plot.app /Applications/Plots.app; do
+  if [[ -d "$installed" ]]; then
+    "$register" -u "$installed"
+    rm -rf "$installed"
+  fi
+done
+mv "$app" /Applications/Plot.app
+"$register" -f /Applications/Plot.app
+printf 'Built and installed: /Applications/Plot.app\n'

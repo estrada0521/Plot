@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Plots</string>
+	<string>Plot</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -23,13 +23,13 @@
 		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
-	<string>plots</string>
+	<string>plot</string>
 	<key>CFBundleIconFile</key>
 	<string>icon.icns</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.okadaharuto.plots</string>
 	<key>CFBundleName</key>
-	<string>Plots</string>
+	<string>Plot</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

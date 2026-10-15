@@ -2,8 +2,8 @@
 #import <WebKit/WebKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-extern char *plots_read_groups(const char *paths);
-extern void plots_free_string(char *value);
+extern char *plot_read_groups(const char *paths);
+extern void plot_free_string(char *value);
 
 static NSString *JSON(id value) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:value ?: NSNull.null options:NSJSONWritingFragmentsAllowed error:nil];
@@ -12,7 +12,7 @@ static NSString *JSON(id value) {
 
 static NSString *JSONFromCString(char *raw) {
     NSString *text = [NSString stringWithUTF8String:raw];
-    plots_free_string(raw);
+    plot_free_string(raw);
     return text;
 }
 
@@ -34,9 +34,9 @@ static NSString *JSONFromCString(char *raw) {
 }
 @end
 
-@class PlotsApp;
+@class PlotApp;
 @interface PlotController : NSObject <NSWindowDelegate, WKScriptMessageHandlerWithReply, WKNavigationDelegate>
-@property(nonatomic, weak) PlotsApp *app;
+@property(nonatomic, weak) PlotApp *app;
 @property(nonatomic, strong) PlotWindow *window;
 @property(nonatomic, strong) WKWebView *web;
 @property(nonatomic, copy) NSString *label;
@@ -44,11 +44,11 @@ static NSString *JSONFromCString(char *raw) {
 @property(nonatomic, strong) NSDictionary *initial;
 @property(nonatomic) BOOL loaded;
 @property(nonatomic) BOOL isPlot;
-- (instancetype)initWithApp:(PlotsApp *)app label:(NSString *)label page:(NSString *)page size:(NSSize)size;
+- (instancetype)initWithApp:(PlotApp *)app label:(NSString *)label page:(NSString *)page size:(NSSize)size;
 - (void)event:(NSString *)event payload:(id)payload;
 @end
 
-@interface PlotsApp : NSObject <NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandlerWithReply, WKNavigationDelegate>
+@interface PlotApp : NSObject <NSApplicationDelegate, NSWindowDelegate, WKScriptMessageHandlerWithReply, WKNavigationDelegate>
 @property(nonatomic, strong) NSMutableDictionary<NSString *, PlotController *> *controllers;
 @property(nonatomic, strong) WKWebsiteDataStore *dataStore;
 @property(nonatomic) NSUInteger sequence;
@@ -76,8 +76,8 @@ static NSString *JSONFromCString(char *raw) {
 - (WKWebView *)makeWeb {
     WKWebViewConfiguration *config = [WKWebViewConfiguration new];
     config.websiteDataStore = self.app.dataStore;
-    [config.userContentController addScriptMessageHandlerWithReply:self contentWorld:WKContentWorld.pageWorld name:@"plots"];
-    NSString *script = [NSString stringWithFormat:@"window.plotsLabel=%@;", JSON(self.label)];
+    [config.userContentController addScriptMessageHandlerWithReply:self contentWorld:WKContentWorld.pageWorld name:@"plot"];
+    NSString *script = [NSString stringWithFormat:@"window.plotLabel=%@;", JSON(self.label)];
     [config.userContentController addUserScript:[[WKUserScript alloc] initWithSource:script injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES]];
     WKWebView *web = [[WKWebView alloc] initWithFrame:NSZeroRect configuration:config];
     web.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -92,10 +92,10 @@ static NSString *JSONFromCString(char *raw) {
     window.hasShadow = NO;
     window.releasedWhenClosed = NO;
     window.delegate = self;
-    window.title = @"Plots";
+    window.title = @"Plot";
     return window;
 }
-- (instancetype)initWithApp:(PlotsApp *)app label:(NSString *)label page:(NSString *)page size:(NSSize)size {
+- (instancetype)initWithApp:(PlotApp *)app label:(NSString *)label page:(NSString *)page size:(NSSize)size {
     self = [super init];
     if (!self) return nil;
     self.app = app;
@@ -113,7 +113,7 @@ static NSString *JSONFromCString(char *raw) {
     return self;
 }
 - (void)event:(NSString *)event payload:(id)payload {
-    NSString *script = [NSString stringWithFormat:@"window.plotsEvent?.(%@,%@)", JSON(event), JSON(payload)];
+    NSString *script = [NSString stringWithFormat:@"window.plotEvent?.(%@,%@)", JSON(event), JSON(payload)];
     [self.web evaluateJavaScript:script completionHandler:nil];
 }
 - (void)windowDidMove:(NSNotification *)notification {
@@ -144,7 +144,7 @@ static NSString *JSONFromCString(char *raw) {
     for (NSString *prefix in @[@"filter-", @"axes-"]) {
         [self.app.controllers[[prefix stringByAppendingString:self.label]].window close];
     }
-    [self.web.configuration.userContentController removeScriptMessageHandlerForName:@"plots" contentWorld:WKContentWorld.pageWorld];
+    [self.web.configuration.userContentController removeScriptMessageHandlerForName:@"plot" contentWorld:WKContentWorld.pageWorld];
     [self.app.controllers removeObjectForKey:self.label];
 }
 - (void)webView:(WKWebView *)web decidePolicyForNavigationAction:(WKNavigationAction *)action decisionHandler:(void (^)(WKNavigationActionPolicy))handler {
@@ -247,7 +247,7 @@ static NSString *JSONFromCString(char *raw) {
     } else if ([command isEqual:@"open_datasets"]) {
         [self.app openPaths:args[@"paths"]];
     } else if ([command isEqual:@"duplicate_plot_window"]) {
-        char *raw = plots_read_groups([JSON(args[@"paths"]) UTF8String]);
+        char *raw = plot_read_groups([JSON(args[@"paths"]) UTF8String]);
         NSDictionary *parsed = [NSJSONSerialization JSONObjectWithData:[JSONFromCString(raw) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
         NSArray *groups = parsed[@"groups"];
         if ([parsed[@"errors"] count]) error = [parsed[@"errors"] componentsJoinedByString:@"\n"];
@@ -274,7 +274,7 @@ static NSString *JSONFromCString(char *raw) {
 }
 @end
 
-@implementation PlotsApp
+@implementation PlotApp
 - (void)makeToolbar {
     self.toolbarGap = 6;
     self.toolbar = [[ToolbarWindow alloc] initWithContentRect:NSMakeRect(0, 0, 600, 34) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
@@ -286,8 +286,8 @@ static NSString *JSONFromCString(char *raw) {
     self.toolbar.releasedWhenClosed = NO;
     WKWebViewConfiguration *config = [WKWebViewConfiguration new];
     config.websiteDataStore = self.dataStore;
-    [config.userContentController addScriptMessageHandlerWithReply:self contentWorld:WKContentWorld.pageWorld name:@"plots"];
-    [config.userContentController addUserScript:[[WKUserScript alloc] initWithSource:@"window.plotsLabel='toolbar';" injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES]];
+    [config.userContentController addScriptMessageHandlerWithReply:self contentWorld:WKContentWorld.pageWorld name:@"plot"];
+    [config.userContentController addUserScript:[[WKUserScript alloc] initWithSource:@"window.plotLabel='toolbar';" injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:YES]];
     self.toolbarWeb = [[WKWebView alloc] initWithFrame:self.toolbar.contentView.bounds configuration:config];
     self.toolbarWeb.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.toolbarWeb.navigationDelegate = self;
@@ -337,7 +337,7 @@ static NSString *JSONFromCString(char *raw) {
     [self.toolbar setContentSize:NSMakeSize([state[@"width"] doubleValue], [state[@"height"] doubleValue])];
     [self placeToolbar];
     PlotController *target = self.toolbarTarget;
-    [self.toolbarWeb evaluateJavaScript:[NSString stringWithFormat:@"window.plotsToolbar?.(%@)", JSON(state)] completionHandler:^(id result, NSError *error) {
+    [self.toolbarWeb evaluateJavaScript:[NSString stringWithFormat:@"window.plotToolbar?.(%@)", JSON(state)] completionHandler:^(id result, NSError *error) {
         if (!error && NSApp.isActive && self.toolbarTarget == target) {
             if (self.toolbar.parentWindow != target.window) [target.window addChildWindow:self.toolbar ordered:NSWindowAbove];
             [self.toolbar orderFront:nil];
@@ -384,7 +384,7 @@ static NSString *JSONFromCString(char *raw) {
     NSMenu *bar = [NSMenu new];
     NSEventModifierFlags cmd = NSEventModifierFlagCommand, alt = cmd | NSEventModifierFlagOption, shift = cmd | NSEventModifierFlagShift;
     NSArray *definitions = @[
-        @[@"Plots", @[@"Settings…", @"settings", @",", @(cmd)], @[@"Hide Plots", @"hide", @"h", @(cmd)], @[@"Quit Plots", @"quit", @"q", @(cmd)]],
+        @[@"Plot", @[@"Settings…", @"settings", @",", @(cmd)], @[@"Hide Plot", @"hide", @"h", @(cmd)], @[@"Quit Plot", @"quit", @"q", @(cmd)]],
         @[@"File", @[@"New Window", @"new", @"n", @(cmd)], @[@"Duplicate Window", @"duplicate-window", @"", @(cmd)], @[@"Open…", @"open", @"o", @(cmd)], @[@"Reveal in Finder", @"reveal", @"f", @(cmd)], @[@"Open in Editor", @"editor", @"e", @(cmd)], @[@"Copy Path", @"copy-path", @"p", @(cmd)]],
         @[@"Edit", @[@"Undo", @"undo:", @"z", @(cmd)], @[@"Redo", @"redo:", @"z", @(shift)], @[@"Copy", @"copy:", @"c", @(cmd)], @[@"Paste", @"paste:", @"v", @(cmd)], @[@"Select All", @"selectAll:", @"a", @(cmd)]],
         @[@"Tools", @[@"Filter…", @"filter", @"f", @(alt)], @[@"Axes…", @"axes", @"g", @(alt | NSEventModifierFlagShift)], @[@"Exclude Outliers", @"toggle-outliers", @"r", @(alt)]],
@@ -443,7 +443,7 @@ static NSString *JSONFromCString(char *raw) {
     } else [active event:@"menu-action" payload:action];
 }
 - (BOOL)openPaths:(NSArray<NSString *> *)paths {
-    char *raw = plots_read_groups([JSON(paths) UTF8String]);
+    char *raw = plot_read_groups([JSON(paths) UTF8String]);
     NSDictionary *parsed = [NSJSONSerialization JSONObjectWithData:[JSONFromCString(raw) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
     NSArray *groups = parsed[@"groups"];
     NSArray *empty = [self.controllers.allValues filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(PlotController *controller, NSDictionary *bindings) { return controller.isPlot && !controller.loaded && !controller.pendingDatasets.count; }]];
@@ -471,7 +471,7 @@ int main(int argc, const char *argv[]) {
     @autoreleasepool {
         NSApplication *application = NSApplication.sharedApplication;
         application.activationPolicy = NSApplicationActivationPolicyRegular;
-        PlotsApp *delegate = [PlotsApp new];
+        PlotApp *delegate = [PlotApp new];
         delegate.controllers = [NSMutableDictionary new];
         delegate.dataStore = WKWebsiteDataStore.defaultDataStore;
         application.delegate = delegate;

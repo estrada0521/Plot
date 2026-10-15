@@ -268,7 +268,7 @@ fn group_files(paths: &[String]) -> (Vec<DatasetGroup>, Vec<String>) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn plots_read_groups(paths: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn plot_read_groups(paths: *const c_char) -> *mut c_char {
     let result = CStr::from_ptr(paths).to_str().map_err(|e| e.to_string())
         .and_then(|text| serde_json::from_str::<Vec<String>>(text).map_err(|e| e.to_string()));
     let value = match result {
@@ -282,7 +282,7 @@ pub unsafe extern "C" fn plots_read_groups(paths: *const c_char) -> *mut c_char 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn plots_free_string(value: *mut c_char) {
+pub unsafe extern "C" fn plot_free_string(value: *mut c_char) {
     if !value.is_null() { drop(CString::from_raw(value)); }
 }
 
@@ -291,7 +291,7 @@ mod tests {
     use super::*;
 
     fn group_fixture(tag: &str, files: &[(&str, &str, &str, &str)]) -> (std::path::PathBuf, Vec<String>) {
-        let directory = std::env::temp_dir().join(format!("plots-group-{}-{tag}", std::process::id()));
+        let directory = std::env::temp_dir().join(format!("plot-group-{}-{tag}", std::process::id()));
         let mut paths = Vec::new();
         for (name, content, x, y) in files {
             let folder = directory.join(name);
