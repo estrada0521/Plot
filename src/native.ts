@@ -25,7 +25,7 @@ export function emit(event: string, payload: unknown) { return invoke("emit", { 
 export function emitTo(target: string, event: string, payload: unknown) {
   return invoke("emit", { target, event, payload });
 }
-export function open(options: object) { return invoke<string | null>("open_file", options); }
+export function open(options: object) { return invoke<string[] | string | null>("open_file", options); }
 export function save(options: object) { return invoke<string | null>("save_file", options); }
 export class LogicalSize { constructor(public width: number, public height: number) {} }
 export class PhysicalPosition { constructor(public x: number, public y: number) {} }

@@ -11,8 +11,6 @@ interface AxesInit {
   y_indices: number[];
   x_range?: [number, number] | null;
   y_ranges?: ([number, number] | null)[];
-  twin_y_name?: string | null;
-  twin_y_range?: [number, number] | null;
 }
 
 const win = getCurrentWindow();
@@ -30,10 +28,6 @@ const xSelect = document.getElementById("x-axis-select") as HTMLSelectElement;
 const xMinInput = document.getElementById("x-min-input") as HTMLInputElement;
 const xMaxInput = document.getElementById("x-max-input") as HTMLInputElement;
 const yList = document.getElementById("y-axis-list") as HTMLDivElement;
-const twinYRow = document.getElementById("twin-y-row") as HTMLDivElement;
-const twinYName = document.getElementById("twin-y-name") as HTMLSpanElement;
-const twinYMinInput = document.getElementById("twin-y-min-input") as HTMLInputElement;
-const twinYMaxInput = document.getElementById("twin-y-max-input") as HTMLInputElement;
 const addYBtn = document.getElementById("add-y-btn") as HTMLButtonElement;
 const applyBtn = document.getElementById("apply-btn") as HTMLButtonElement;
 
@@ -134,7 +128,6 @@ function applyAxes() {
     yIndices,
     xRange: readRange(xMinInput, xMaxInput),
     yRanges: collectYRanges(),
-    twinYRange: twinYRow.hidden ? null : readRange(twinYMinInput, twinYMaxInput),
   }).catch(() => {});
 }
 
@@ -159,12 +152,6 @@ invoke<AxesInit | null>("take_axes_init").then((init) => {
   titleEl.title = init.name;
   fillSelect(xSelect, init.x_index);
   setRangeInputs(xMinInput, xMaxInput, init.x_range);
-  twinYRow.hidden = !init.twin_y_name;
-  if (init.twin_y_name) {
-    twinYName.textContent = init.twin_y_name;
-    twinYName.title = init.twin_y_name;
-    setRangeInputs(twinYMinInput, twinYMaxInput, init.twin_y_range);
-  }
   const ys = init.y_indices.length ? init.y_indices : [Math.min(1, columns.length - 1)];
   ys.forEach((index, i) => addYRow(index, init.y_ranges?.[i]));
 });

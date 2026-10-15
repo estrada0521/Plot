@@ -135,20 +135,11 @@ body {
   transition: color 0.12s ease;
 }
 
-.twin-title {
-  display: none;
-  flex: 0 1 40%;
-  min-width: 0;
-  color: #d43c32;
-  font-size: 12px;
+.dataset-position {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  font-size: 10px;
   pointer-events: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-body.twin-active .twin-title {
-  display: inline-block;
 }
 
 .title-indicator {
@@ -171,10 +162,6 @@ body.outliers-active .title-indicator {
 /* ウィンドウ非フォーカス時はファイル名/表示名を薄く */
 body.window-blurred .title {
   color: var(--color-text-muted);
-}
-
-body.window-blurred .twin-title {
-  color: #b94b45;
 }
 
 /* ポップアップ（設定/フィルタ）のタイトルは LabApp-2 同様に中央寄せ・muted */
@@ -400,22 +387,7 @@ body.window-blurred .twin-title {
   color: var(--color-chrome-text);
 }
 
-.axes-twin-row {
-  margin-top: 8px;
-  color: #d43c32;
-}
-
-.axes-twin-name {
-  min-width: 0;
-  width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.axes-twin-row .axes-axis,
-.axes-twin-row .axes-twin-name,
-.axes-twin-row .axes-range-input {
+.axes-range-input {
   color: #d43c32;
 }
 

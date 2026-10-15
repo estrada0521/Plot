@@ -19,6 +19,7 @@ interface DuplicateInit {
   xIndex: number;
   yIndex: number;
   yIndices?: number[];
+  selectedDatasetIndex?: number;
   panelWidth: number;
   panelHeight: number;
   plotMode: "lines" | "markers";
@@ -31,19 +32,16 @@ interface AxesApply {
   yIndices: number[];
   xRange?: [number, number] | null;
   yRanges?: ([number, number] | null)[];
-  twinYRange?: [number, number] | null;
 }
 
 interface RangeState {
   xRange?: [number, number] | null;
   yRanges?: ([number, number] | null)[];
-  twinYRange?: [number, number] | null;
 }
 
-interface TwinDataset {
-  dataset: Dataset;
+interface DatasetFile {
   path: string;
-  xIndex: number;
+  dataset: Dataset;
 }
 
 const openBtn = document.getElementById("open-btn") as HTMLButtonElement;
@@ -60,7 +58,6 @@ const lineBtn = document.getElementById("line-btn") as HTMLButtonElement;
 const scatterBtn = document.getElementById("scatter-btn") as HTMLButtonElement;
 const outlierBtn = document.getElementById("outlier-btn") as HTMLButtonElement;
 const titleEl = document.getElementById("title") as HTMLSpanElement;
-const twinTitleEl = document.getElementById("twin-title") as HTMLSpanElement;
 const pinBtn = document.getElementById("win-pin") as HTMLButtonElement;
 
 // --- 自前タイトルバーのウィンドウ操作 ---
@@ -113,14 +110,58 @@ let dragmode: "zoom" | "pan" = "zoom";
 let plotMode: "lines" | "markers" = "lines";
 let excludeOutliers = false;
 let yAxisIndices: number[] = [];
-let twin: TwinDataset | null = null;
+let datasets: DatasetFile[] = [];
+let selectedDatasetIndex = 0;
+const datasetPositionEl = document.getElementById("dataset-position") as HTMLSpanElement;
 
-function updateTwinTitle() {
-  document.body.classList.toggle("twin-active", twin !== null);
-  const name = twin?.dataset.display_name ?? twin?.dataset.name ?? "";
-  twinTitleEl.textContent = name;
-  twinTitleEl.title = name;
+function datasetLabels() {
+  const names = datasets.map(({ dataset }) => dataset.display_name ?? dataset.name);
+  return names.map((name, index) => {
+    if (names.filter((value) => value === name).length === 1) return name;
+    const parts = datasets[index].path.split("/");
+    return `${name} [${parts.slice(-2).join("/")}]`;
+  });
 }
+
+function updateDatasetHeader() {
+  if (!datasets.length) return;
+  current = datasets[selectedDatasetIndex].dataset;
+  currentPath = datasets[selectedDatasetIndex].path;
+  titleEl.textContent = datasetLabels()[selectedDatasetIndex];
+  titleEl.title = currentPath;
+  datasetPositionEl.textContent = datasets.length > 1 ? `${selectedDatasetIndex + 1}/${datasets.length}` : "";
+}
+
+function selectDataset(index: number) {
+  if (datasets.length < 2) return;
+  selectedDatasetIndex = (index + datasets.length) % datasets.length;
+  updateDatasetHeader();
+  const graph = plotEl as PlotElementWithHistory & { data?: { meta: number }[] };
+  if (!graph.data) return;
+  const selected = selectedDatasetIndex;
+  const active = graph.data.map((trace) => trace.meta === selected);
+  const colors = active.map((value) => value ? themeVar("--color-plot-line") : "#b8b8b8");
+  Plotly.restyle(plotEl, {
+    "line.color": colors,
+    "marker.color": colors,
+    "line.width": active.map((value) => value ? 2.5 : 1.5),
+    "marker.size": active.map((value) => value ? 4 : 3),
+  }).then(() => {
+    if (selected !== selectedDatasetIndex || !graph.data) return;
+    const indices = graph.data.flatMap((trace, index) => trace.meta === selected ? [index] : []);
+    return Plotly.moveTraces(plotEl, indices);
+  }).catch((error: unknown) => { statusEl.textContent = `エラー: ${error}`; });
+}
+
+window.addEventListener("keydown", (event) => {
+  if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || datasets.length < 2) return;
+  if (event.target instanceof Element && event.target.closest("input, select, textarea, [contenteditable=true]")) return;
+  const previous = event.key === "ArrowLeft" || event.key === "ArrowUp";
+  const next = event.key === "ArrowRight" || event.key === "ArrowDown";
+  if (!previous && !next) return;
+  event.preventDefault();
+  selectDataset(selectedDatasetIndex + (next ? 1 : -1));
+});
 
 // データフィルタ（filter ウィンドウから適用）。列インデックスごとの min/max。
 // 元データ（current.rows）は不変。描画/保存時にこの規則で行を絞り込むだけ。
@@ -131,11 +172,11 @@ interface FilterRule {
 }
 let activeFilter: FilterRule[] = [];
 
-function getFilteredRows(): (number | null)[][] {
-  if (!current) return [];
+function getFilteredRows(dataset = current): (number | null)[][] {
+  if (!dataset) return [];
   const rules = activeFilter.filter((f) => f.min !== null || f.max !== null);
-  if (!rules.length) return current.rows;
-  return current.rows.filter((r) =>
+  if (!rules.length) return dataset.rows;
+  return dataset.rows.filter((r) =>
     rules.every((f) => {
       const v = r[f.col];
       // 制約をかけた列が欠損(null/NaN)の行は除外
@@ -168,14 +209,15 @@ listen("filter-reset", () => {
 // 自ウィンドウ宛て（emitTo）のみ受信。
 listen("filter-save", async () => {
   if (!current) return;
-  const rows = getFilteredRows();
-  const fmt = (v: number | null) =>
-    v === null || v === undefined || Number.isNaN(v) ? "" : String(v);
+  const multiple = datasets.length > 1;
+  const labels = datasetLabels();
+  const fmt = (v: number | null) => v === null || v === undefined || Number.isNaN(v) ? "" : String(v);
+  const quote = (text: string) => `"${text.replaceAll('"', '""')}"`;
   const csv =
-    current.columns.join(",") +
-    "\n" +
-    rows.map((r) => r.map(fmt).join(",")).join("\n") +
-    "\n";
+    (multiple ? "Dataset," : "") + current.columns.map(quote).join(",") + "\n" +
+    datasets.flatMap(({ dataset }, index) => getFilteredRows(dataset).map((row) =>
+      (multiple ? quote(labels[index]) + "," : "") + row.map(fmt).join(","),
+    )).join("\n") + "\n";
   const base = (current.display_name ?? current.name).replace(/\.[^.]+$/, "");
   try {
     const path = await save({
@@ -321,7 +363,8 @@ document.querySelectorAll<HTMLElement>(".grip").forEach((grip) => {
 function duplicateWindow() {
   if (!currentPath) return;
   invoke("duplicate_plot_window", {
-    path: currentPath,
+    paths: datasets.map(({ path }) => path),
+    selectedDatasetIndex,
     xIndex: Math.max(0, xSelect.selectedIndex),
     yIndex: Math.max(0, ySelect.selectedIndex),
     yIndices: yAxisIndices,
@@ -333,39 +376,6 @@ function duplicateWindow() {
   }).catch((err) => {
     statusEl.textContent = `エラー: ${err}`;
   });
-}
-
-function chooseTwinYIndex(ds: Dataset, preferredName: string, xName: string) {
-  const preferred = ds.columns.indexOf(preferredName);
-  if (preferred >= 0 && ds.columns[preferred] !== xName) return preferred;
-  const defaultY = ds.default_y ? ds.columns.indexOf(ds.default_y) : -1;
-  if (defaultY >= 0 && ds.columns[defaultY] !== xName) return defaultY;
-  const fallback = ds.columns.findIndex((name) => name !== xName);
-  return fallback >= 0 ? fallback : 0;
-}
-
-async function addTwinData() {
-  if (!current) return;
-  const selected = await open({
-    multiple: false,
-    filters: [{ name: "Data", extensions: ["csv", "dat", "txt", "ras"] }],
-  });
-  if (typeof selected !== "string") return;
-  try {
-    const ds = await invoke<Dataset>("read_dataset", { path: selected });
-    const xName = current.columns[Number(xSelect.value)];
-    const xIndex = ds.columns.indexOf(xName);
-    if (xIndex < 0) {
-      statusEl.textContent = `エラー: 2つ目のデータに X 軸列 "${xName}" がありません`;
-      return;
-    }
-    twin = { dataset: ds, path: selected, xIndex };
-    updateTwinTitle();
-    statusEl.textContent = "";
-    render();
-  } catch (err) {
-    statusEl.textContent = `エラー: ${err}`;
-  }
 }
 
 // File メニュー（⌘O/⌘C/⌘F/⌘E/⌥⌘F）からの操作。フォーカス中ウィンドウにのみ届く。
@@ -386,10 +396,6 @@ function menuAction(action: string) {
     openAxesWindow();
     return;
   }
-  if (action === "add-twin-data") {
-    addTwinData();
-    return;
-  }
   if (!currentPath || !current) return;
   const fail = (err: unknown) => {
     statusEl.textContent = `エラー: ${err}`;
@@ -401,10 +407,10 @@ function menuAction(action: string) {
       columns: current.columns,
     }).catch(fail);
   } else if (action === "reveal") {
-    invoke("reveal_in_finder", { path: currentPath }).catch(fail);
+    invoke("reveal_in_finder", { paths: [currentPath] }).catch(fail);
   } else if (action === "editor") {
     invoke("open_with_editor", {
-      path: currentPath,
+      paths: [currentPath],
       editor: localStorage.getItem("editor") ?? "",
     }).catch(fail);
   } else if (action === "copy-path") {
@@ -471,9 +477,6 @@ window.addEventListener("keydown", (e) => {
   if (key === "r" && e.altKey && !e.shiftKey) {
     e.preventDefault();
     toggleOutliers();
-  } else if (key === "d" && e.altKey && e.shiftKey) {
-    e.preventDefault();
-    addTwinData();
   } else if (key === "g" && e.altKey && e.shiftKey) {
     e.preventDefault();
     openAxesWindow();
@@ -517,6 +520,9 @@ function applyDuplicateInit(init: DuplicateInit) {
   if (init.dragmode === "zoom" || init.dragmode === "pan") {
     dragmode = init.dragmode;
   }
+  if (Number.isInteger(init.selectedDatasetIndex) && init.selectedDatasetIndex! >= 0 && init.selectedDatasetIndex! < datasets.length) {
+    selectedDatasetIndex = init.selectedDatasetIndex!;
+  }
   excludeOutliers = init.excludeOutliers === true;
   updateOutlierButton();
   const minW = parseInt(themeVar("--panel-min-width"), 10) || 80;
@@ -529,18 +535,20 @@ function applyDuplicateInit(init: DuplicateInit) {
   }
 }
 
-async function loadDataset(path: string, duplicateInit?: DuplicateInit | null) {
+async function loadDatasets(items: DatasetFile[], duplicateInit?: DuplicateInit | null) {
+  if (!items.length) return;
   statusEl.textContent = "";
   try {
-    current = await invoke<Dataset>("read_dataset", { path });
-    currentPath = path;
-    await invoke("mark_window_loaded");
-    titleEl.textContent = current.display_name ?? current.name;
+    datasets = items;
+    selectedDatasetIndex = 0;
+    current = items[0].dataset;
+    currentPath = items[0].path;
+    activeFilter = [];
     setupAxisSelectors(current);
-    twin = null;
-    updateTwinTitle();
     if (duplicateInit) applyDuplicateInit(duplicateInit);
+    updateDatasetHeader();
     render();
+    await invoke("mark_window_loaded");
   } catch (err) {
     statusEl.textContent = `エラー: ${err}`;
   }
@@ -548,18 +556,17 @@ async function loadDataset(path: string, duplicateInit?: DuplicateInit | null) {
 
 openBtn.addEventListener("click", async () => {
   const selected = await open({
-    multiple: false,
+    multiple: true,
     filters: [{ name: "Data", extensions: ["csv", "dat", "txt", "ras"] }],
   });
-  if (typeof selected === "string") loadDataset(selected);
+  if (Array.isArray(selected) && selected.length) await invoke("open_datasets", { paths: selected });
 });
 
-// Finder で開かれたファイル（関連付け）がこのウィンドウに割り当てられていれば自動ロード
 Promise.all([
-  invoke<string | null>("take_pending_file"),
+  invoke<DatasetFile[] | null>("take_pending_datasets"),
   invoke<DuplicateInit | null>("take_duplicate_init"),
-]).then(([path, duplicateInit]) => {
-  if (path) loadDataset(path, duplicateInit);
+]).then(([items, duplicateInit]) => {
+  if (items) loadDatasets(items, duplicateInit);
 });
 
 function setupAxisSelectors(ds: Dataset) {
@@ -593,7 +600,7 @@ listen<AxesApply>("axes-apply", (e) => {
   xSelect.selectedIndex = xIndex;
   ySelect.selectedIndex = ys[ys.length - 1];
   yAxisIndices = ys;
-  render({ xRange: e.payload.xRange, yRanges: e.payload.yRanges, twinYRange: e.payload.twinYRange });
+  render({ xRange: e.payload.xRange, yRanges: e.payload.yRanges });
 }, { target: appWindow.label }).catch(() => {});
 
 function openAxesWindow() {
@@ -604,14 +611,6 @@ function openAxesWindow() {
     const key = i === 0 ? "yaxis" : `yaxis${i + 1}`;
     return readAxisNumericRange(layout?.[key]);
   });
-  const twinAxisKey = `yaxis${yAxisIndices.length + 1}`;
-  const layout = gd._fullLayout as PlotElementWithHistory["_fullLayout"] & Record<string, PlotAxisLayout>;
-  const xName = current.columns[Number(xSelect.value)];
-  const bottomYName = current.columns[yAxisIndices[yAxisIndices.length - 1] ?? Number(ySelect.value)];
-  const twinXIndex = twin?.dataset.columns.indexOf(xName) ?? -1;
-  const twinYIndex = twin && twinXIndex >= 0
-    ? chooseTwinYIndex(twin.dataset, bottomYName, xName)
-    : -1;
   invoke("open_axes_window", {
     sourceLabel: appWindow.label,
     name: current.display_name ?? current.name,
@@ -620,8 +619,6 @@ function openAxesWindow() {
     yIndices: yAxisIndices.length ? yAxisIndices : [Math.max(0, ySelect.selectedIndex)],
     xRange: readAxisNumericRange(gd._fullLayout?.xaxis),
     yRanges,
-    twinYName: twin && twinYIndex >= 0 ? twin.dataset.columns[twinYIndex] : null,
-    twinYRange: readAxisNumericRange(layout?.[twinAxisKey]),
   }).catch((err) => {
     statusEl.textContent = `エラー: ${err}`;
   });
@@ -949,10 +946,8 @@ function render(rangeState?: RangeState | { axis: "x" | "y"; range: [number, num
   if (!yAxisIndices.length) yAxisIndices = [Number(ySelect.value)];
   const validYIndices = yAxisIndices.filter((i) => i >= 0 && i < current!.columns.length);
   if (!validYIndices.length) validYIndices.push(Number(ySelect.value));
-  const rows = removeOutliersByAxes(getFilteredRows(), xi, validYIndices);
-  const x = rows.map((r) => r[xi]);
-
   const lineColor = themeVar("--color-plot-line");
+  const labels = datasetLabels();
   const frameColor = themeVar("--color-plot-frame");
   const textColor = themeVar("--color-text");
   const fontFamily = themeVar("--font-family");
@@ -981,47 +976,29 @@ function render(rangeState?: RangeState | { axis: "x" | "y"; range: [number, num
   const n = validYIndices.length;
   const gap = n > 1 ? 0.035 : 0;
   const panelHeight = (1 - gap * (n - 1)) / n;
-  const traces = validYIndices.map((yi, i) => ({
-    x,
-    y: rows.map((r) => r[yi]),
-    type: "scattergl",
-    mode: plotMode,
-    line: { width: 2.5, color: lineColor },
-    marker: { size: 4, color: lineColor },
-    xaxis: i === 0 ? "x" : `x${i + 1}`,
-    yaxis: i === 0 ? "y" : `y${i + 1}`,
-    showlegend: false,
-  }));
-  const bottomAxisIndex = validYIndices.length;
-  const bottomXRef = bottomAxisIndex === 1 ? "x" : `x${bottomAxisIndex}`;
-  const bottomYRef = bottomAxisIndex === 1 ? "y" : `y${bottomAxisIndex}`;
-  const twinAxisIndex = validYIndices.length + 1;
-  const twinYRef = `y${twinAxisIndex}`;
-  const twinLayoutKey = `yaxis${twinAxisIndex}`;
-  const twinInfo = (() => {
-    if (!twin) return null;
-    const xName = current!.columns[xi];
-    const twinXIndex = twin.dataset.columns.indexOf(xName);
-    if (twinXIndex < 0) return null;
-    const bottomYIndex = validYIndices[validYIndices.length - 1];
-    const twinYIndex = chooseTwinYIndex(twin.dataset, current!.columns[bottomYIndex], xName);
-    return { dataset: twin.dataset, xIndex: twinXIndex, yIndex: twinYIndex };
-  })();
-  const twinTrace = (() => {
-    if (!twinInfo) return null;
-    const twinRows = removeOutliersByAxes(twinInfo.dataset.rows, twinInfo.xIndex, [twinInfo.yIndex]);
-    return {
-      x: twinRows.map((r) => r[twinInfo.xIndex]),
-      y: twinRows.map((r) => r[twinInfo.yIndex]),
+  const order = datasets.map((_, index) => index).filter((index) => index !== selectedDatasetIndex);
+  order.push(selectedDatasetIndex);
+  const traces = order.flatMap((datasetIndex) => {
+    const { dataset, path } = datasets[datasetIndex];
+    const rows = removeOutliersByAxes(getFilteredRows(dataset), xi, validYIndices);
+    const selected = datasetIndex === selectedDatasetIndex;
+    const color = selected ? lineColor : "#b8b8b8";
+    return validYIndices.map((yi, i) => ({
+      x: rows.map((row) => row[xi]),
+      y: rows.map((row) => row[yi]),
       type: "scattergl",
       mode: plotMode,
-      line: { width: 2.5, color: "#d43c32" },
-      marker: { size: 4, color: "#d43c32" },
-      xaxis: bottomXRef,
-      yaxis: twinYRef,
+      name: labels[datasetIndex],
+      uid: `${path}:${yi}`,
+      meta: datasetIndex,
+      line: { width: selected ? 2.5 : 1.5, color },
+      marker: { size: selected ? 4 : 3, color },
+      xaxis: i === 0 ? "x" : `x${i + 1}`,
+      yaxis: i === 0 ? "y" : `y${i + 1}`,
       showlegend: false,
-    };
-  })();
+      hovertemplate: "%{x}, %{y}<extra>%{fullData.name}</extra>",
+    }));
+  });
   const yAxes: Record<string, Record<string, unknown>> = Object.fromEntries(validYIndices.map((yi, i) => {
     const top = 1 - i * (panelHeight + gap);
     const bottom = top - panelHeight;
@@ -1031,23 +1008,6 @@ function render(rangeState?: RangeState | { axis: "x" | "y"; range: [number, num
       domain: [bottom, top],
     }];
   }));
-  if (twinTrace && twinInfo) {
-    const twinYName = twinInfo.dataset.columns[twinInfo.yIndex];
-    yAxes[twinLayoutKey] = {
-      ...axis(twinYName, "y", 5),
-      ...(fixedRanges.twinYRange ? { autorange: false, range: fixedRanges.twinYRange } : {}),
-      overlaying: bottomYRef,
-      side: "right",
-      tickfont: { color: "#d43c32" },
-      title: {
-        text: twinYName,
-        standoff: 5,
-        font: { color: "#d43c32" },
-      },
-      linecolor: "#d43c32",
-      tickcolor: "#d43c32",
-    };
-  }
   const xAxes = Object.fromEntries(validYIndices.map((_, i) => {
     const key = i === 0 ? "xaxis" : `xaxis${i + 1}`;
     const yRef = i === 0 ? "y" : `y${i + 1}`;
@@ -1063,9 +1023,10 @@ function render(rangeState?: RangeState | { axis: "x" | "y"; range: [number, num
 
   Plotly.react(
     plotEl,
-    twinTrace ? [...traces, twinTrace] : traces,
+    traces,
     {
-      margin: { l: 60, r: twinTrace ? 76 : 20, t: 20, b: 50 },
+      margin: { l: 60, r: 20, t: 20, b: 50 },
+      showlegend: false,
       paper_bgcolor: "rgba(0,0,0,0)",
       plot_bgcolor: "rgba(0,0,0,0)",
       font: { color: textColor, family: fontFamily },

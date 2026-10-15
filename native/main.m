@@ -2,12 +2,18 @@
 #import <WebKit/WebKit.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
-extern char *plots_read_dataset(const char *path);
+extern char *plots_read_groups(const char *paths);
 extern void plots_free_string(char *value);
 
 static NSString *JSON(id value) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:value ?: NSNull.null options:NSJSONWritingFragmentsAllowed error:nil];
     return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+}
+
+static NSString *JSONFromCString(char *raw) {
+    NSString *text = [NSString stringWithUTF8String:raw];
+    plots_free_string(raw);
+    return text;
 }
 
 @interface PlotWindow : NSWindow
@@ -34,7 +40,7 @@ static NSString *JSON(id value) {
 @property(nonatomic, strong) PlotWindow *window;
 @property(nonatomic, strong) WKWebView *web;
 @property(nonatomic, copy) NSString *label;
-@property(nonatomic, copy) NSString *pendingPath;
+@property(nonatomic, strong) NSArray *pendingDatasets;
 @property(nonatomic, strong) NSDictionary *initial;
 @property(nonatomic) BOOL loaded;
 @property(nonatomic) BOOL isPlot;
@@ -50,7 +56,8 @@ static NSString *JSON(id value) {
 @property(nonatomic, strong) WKWebView *toolbarWeb;
 @property(nonatomic, weak) PlotController *toolbarTarget;
 @property(nonatomic) CGFloat toolbarGap;
-- (PlotController *)newPlot:(NSString *)path initial:(NSDictionary *)initial;
+- (PlotController *)newPlot:(NSArray *)items initial:(NSDictionary *)initial;
+- (BOOL)openPaths:(NSArray<NSString *> *)paths;
 - (PlotController *)active;
 - (void)menu:(NSMenuItem *)sender;
 - (void)selectPlot:(PlotController *)plot;
@@ -149,15 +156,8 @@ static NSString *JSON(id value) {
     NSDictionary *args = body[@"args"];
     id result = NSNull.null;
     NSString *error = nil;
-    if ([command isEqual:@"read_dataset"]) {
-        char *raw = plots_read_dataset([args[@"path"] UTF8String]);
-        NSData *data = [[NSString stringWithUTF8String:raw] dataUsingEncoding:NSUTF8StringEncoding];
-        plots_free_string(raw);
-        NSDictionary *parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        result = parsed[@"data"];
-        error = parsed[@"error"];
-    } else if ([command isEqual:@"take_pending_file"]) {
-        result = self.pendingPath; self.pendingPath = nil;
+    if ([command isEqual:@"take_pending_datasets"]) {
+        result = self.pendingDatasets; self.pendingDatasets = nil;
     } else if ([command isEqual:@"take_duplicate_init"]) {
         result = self.initial; self.initial = nil;
     } else if ([command isEqual:@"take_filter_init"] || [command isEqual:@"take_axes_init"]) {
@@ -205,10 +205,13 @@ static NSString *JSON(id value) {
         panel.allowedContentTypes = types;
         if ([panel isKindOfClass:NSOpenPanel.class]) {
             ((NSOpenPanel *)panel).canChooseDirectories = NO;
-            ((NSOpenPanel *)panel).allowsMultipleSelection = NO;
+            ((NSOpenPanel *)panel).allowsMultipleSelection = [args[@"multiple"] boolValue];
         } else panel.nameFieldStringValue = [args[@"defaultPath"] lastPathComponent] ?: @"data.csv";
         [panel beginSheetModalForWindow:self.window completionHandler:^(NSModalResponse response) {
-            reply(response == NSModalResponseOK ? panel.URL.path : NSNull.null, nil);
+            if (response != NSModalResponseOK) { reply(NSNull.null, nil); return; }
+            if ([panel isKindOfClass:NSOpenPanel.class] && [args[@"multiple"] boolValue]) {
+                reply([((NSOpenPanel *)panel).URLs valueForKey:@"path"], nil);
+            } else reply(panel.URL.path, nil);
         }];
         return;
     } else if ([command isEqual:@"write_text_file"]) {
@@ -216,11 +219,14 @@ static NSString *JSON(id value) {
         [args[@"content"] writeToFile:args[@"path"] atomically:YES encoding:NSUTF8StringEncoding error:&err];
         error = err.localizedDescription;
     } else if ([command isEqual:@"reveal_in_finder"]) {
-        [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[[NSURL fileURLWithPath:args[@"path"]]]];
+        NSMutableArray *urls = [NSMutableArray new];
+        for (NSString *path in args[@"paths"]) [urls addObject:[NSURL fileURLWithPath:path]];
+        [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:urls];
     } else if ([command isEqual:@"open_with_editor"]) {
         NSTask *task = [NSTask new]; task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/open"];
         NSString *editor = args[@"editor"];
-        task.arguments = editor.length ? @[@"-a", editor, args[@"path"]] : @[@"-t", args[@"path"]];
+        NSMutableArray *arguments = [NSMutableArray arrayWithArray:editor.length ? @[@"-a", editor] : @[@"-t"]];
+        [arguments addObjectsFromArray:args[@"paths"]]; task.arguments = arguments;
         NSError *err; [task launchAndReturnError:&err]; error = err.localizedDescription;
     } else if ([command isEqual:@"copy_path"]) {
         [NSPasteboard.generalPasteboard clearContents];
@@ -238,8 +244,15 @@ static NSString *JSON(id value) {
             else reply(destination.path, nil);
         }];
         return;
+    } else if ([command isEqual:@"open_datasets"]) {
+        [self.app openPaths:args[@"paths"]];
     } else if ([command isEqual:@"duplicate_plot_window"]) {
-        [self.app newPlot:args[@"path"] initial:args];
+        char *raw = plots_read_groups([JSON(args[@"paths"]) UTF8String]);
+        NSDictionary *parsed = [NSJSONSerialization JSONObjectWithData:[JSONFromCString(raw) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+        NSArray *groups = parsed[@"groups"];
+        if ([parsed[@"errors"] count]) error = [parsed[@"errors"] componentsJoinedByString:@"\n"];
+        else if (groups.count == 1) [self.app newPlot:groups[0][@"items"] initial:args];
+        else error = @"The files no longer share the same axes.";
     } else if ([command isEqual:@"open_filter_window"] || [command isEqual:@"open_axes_window"]) {
         BOOL filter = [command isEqual:@"open_filter_window"];
         NSString *label = [(filter ? @"filter-" : @"axes-") stringByAppendingString:args[@"sourceLabel"]];
@@ -247,7 +260,7 @@ static NSString *JSON(id value) {
         if (!popup) {
             popup = [[PlotController alloc] initWithApp:self.app label:label page:filter ? @"filter.html" : @"axes.html" size:filter ? NSMakeSize(300, 360) : NSMakeSize(420, 300)];
             NSMutableDictionary *initial = [args mutableCopy];
-            NSDictionary *keys = @{@"sourceLabel": @"source_label", @"xIndex": @"x_index", @"yIndices": @"y_indices", @"xRange": @"x_range", @"yRanges": @"y_ranges", @"twinYName": @"twin_y_name", @"twinYRange": @"twin_y_range"};
+            NSDictionary *keys = @{@"sourceLabel": @"source_label", @"xIndex": @"x_index", @"yIndices": @"y_indices", @"xRange": @"x_range", @"yRanges": @"y_ranges"};
             for (NSString *key in keys) if (args[key]) initial[keys[key]] = args[key];
             popup.initial = initial;
             self.app.controllers[label] = popup;
@@ -350,10 +363,11 @@ static NSString *JSON(id value) {
     }
     return nil;
 }
-- (PlotController *)newPlot:(NSString *)path initial:(NSDictionary *)initial {
+- (PlotController *)newPlot:(NSArray *)items initial:(NSDictionary *)initial {
     PlotController *active = [self active];
     PlotController *controller = [[PlotController alloc] initWithApp:self label:[NSString stringWithFormat:@"plot-%lu", (unsigned long)self.sequence++] page:@"index.html" size:NSMakeSize(360, 280)];
-    controller.pendingPath = path;
+    controller.pendingDatasets = items;
+    controller.loaded = items.count > 0;
     controller.initial = initial;
     self.controllers[controller.label] = controller;
     NSPoint top = active ? NSMakePoint(NSMinX(active.window.frame) + 28, NSMaxY(active.window.frame) - 28) : NSMakePoint(100, NSMaxY(NSScreen.screens.firstObject.visibleFrame) - 60);
@@ -373,7 +387,7 @@ static NSString *JSON(id value) {
         @[@"Plots", @[@"Settings…", @"settings", @",", @(cmd)], @[@"Hide Plots", @"hide", @"h", @(cmd)], @[@"Quit Plots", @"quit", @"q", @(cmd)]],
         @[@"File", @[@"New Window", @"new", @"n", @(cmd)], @[@"Duplicate Window", @"duplicate-window", @"", @(cmd)], @[@"Open…", @"open", @"o", @(cmd)], @[@"Reveal in Finder", @"reveal", @"f", @(cmd)], @[@"Open in Editor", @"editor", @"e", @(cmd)], @[@"Copy Path", @"copy-path", @"p", @(cmd)]],
         @[@"Edit", @[@"Undo", @"undo:", @"z", @(cmd)], @[@"Redo", @"redo:", @"z", @(shift)], @[@"Copy", @"copy:", @"c", @(cmd)], @[@"Paste", @"paste:", @"v", @(cmd)], @[@"Select All", @"selectAll:", @"a", @(cmd)]],
-        @[@"Tools", @[@"Filter…", @"filter", @"f", @(alt)], @[@"Axes…", @"axes", @"g", @(alt | NSEventModifierFlagShift)], @[@"Add Twin Data…", @"add-twin-data", @"d", @(alt | NSEventModifierFlagShift)], @[@"Exclude Outliers", @"toggle-outliers", @"r", @(alt)]],
+        @[@"Tools", @[@"Filter…", @"filter", @"f", @(alt)], @[@"Axes…", @"axes", @"g", @(alt | NSEventModifierFlagShift)], @[@"Exclude Outliers", @"toggle-outliers", @"r", @(alt)]],
         @[@"Window", @[@"Minimize", @"minimize", @"m", @(cmd)], @[@"Next Window", @"next", @"`", @(cmd)], @[@"Previous Window", @"previous", @"`", @(shift)], @[@"Arrange Windows", @"arrange", @"a", @(alt)], @[@"Cascade Windows", @"cascade", @"a", @(alt | NSEventModifierFlagShift)]]
     ];
     for (NSArray *definition in definitions) {
@@ -428,11 +442,24 @@ static NSString *JSON(id value) {
         }
     } else [active event:@"menu-action" payload:action];
 }
+- (BOOL)openPaths:(NSArray<NSString *> *)paths {
+    char *raw = plots_read_groups([JSON(paths) UTF8String]);
+    NSDictionary *parsed = [NSJSONSerialization JSONObjectWithData:[JSONFromCString(raw) dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    NSArray *groups = parsed[@"groups"];
+    NSArray *empty = [self.controllers.allValues filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(PlotController *controller, NSDictionary *bindings) { return controller.isPlot && !controller.loaded && !controller.pendingDatasets.count; }]];
+    for (NSDictionary *group in groups) [self newPlot:group[@"items"] initial:nil];
+    if (groups.count) for (PlotController *controller in empty) [controller.window close];
+    if ([parsed[@"errors"] count]) {
+        NSAlert *alert = [NSAlert new];
+        alert.messageText = @"Some data files could not be opened";
+        alert.informativeText = [parsed[@"errors"] componentsJoinedByString:@"\n"];
+        [alert runModal];
+    }
+    return [parsed[@"errors"] count] == 0;
+}
 - (void)application:(NSApplication *)application openFiles:(NSArray<NSString *> *)filenames {
-    NSArray *empty = [self.controllers.allValues filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(PlotController *controller, NSDictionary *bindings) { return controller.isPlot && !controller.loaded && !controller.pendingPath; }]];
-    for (NSString *path in filenames) [self newPlot:path initial:nil];
-    for (PlotController *controller in empty) [controller.window close];
-    [application replyToOpenOrPrint:NSApplicationDelegateReplySuccess];
+    BOOL success = [self openPaths:filenames];
+    [application replyToOpenOrPrint:success ? NSApplicationDelegateReplySuccess : NSApplicationDelegateReplyFailure];
 }
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)application hasVisibleWindows:(BOOL)visible {
     if (!visible) [self newPlot:nil initial:nil];

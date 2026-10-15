@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::{fs, path::Path, ffi::{CStr, CString}, os::raw::c_char};
+use std::{fs, path::Path, ffi::{CStr, CString}, collections::HashSet, os::raw::c_char};
 
 #[derive(Serialize)]
 struct Dataset {
@@ -218,12 +218,65 @@ fn parse_ras(content: &str, name: String, path: &str) -> Result<Dataset, String>
 }
 
 
+#[derive(Serialize)]
+struct DatasetFile {
+    path: String,
+    dataset: Dataset,
+}
+
+#[derive(Serialize)]
+struct DatasetGroup {
+    x: String,
+    y: String,
+    items: Vec<DatasetFile>,
+}
+
+fn group_files(paths: &[String]) -> (Vec<DatasetGroup>, Vec<String>) {
+    let mut groups: Vec<DatasetGroup> = Vec::new();
+    let mut errors = Vec::new();
+    let mut seen = HashSet::new();
+    for path in paths {
+        if !seen.insert(path) { continue; }
+        let dataset = match parse_file(path) {
+            Ok(dataset) => dataset,
+            Err(error) => { errors.push(format!("{path}: {error}")); continue; }
+        };
+        let x = dataset.default_x.clone().unwrap_or_else(|| dataset.columns[0].clone());
+        let y = dataset.default_y.clone().unwrap_or_else(|| dataset.columns[usize::from(dataset.columns.len() > 1)].clone());
+        let item = DatasetFile { path: path.clone(), dataset };
+        if let Some(group) = groups.iter_mut().find(|group| group.x == x && group.y == y) {
+            group.items.push(item);
+        } else {
+            groups.push(DatasetGroup { x, y, items: vec![item] });
+        }
+    }
+    for group in &mut groups {
+        let columns: Vec<String> = group.items[0].dataset.columns.iter()
+            .filter(|name| group.items.iter().all(|item| item.dataset.columns.contains(name)))
+            .cloned().collect();
+        for item in &mut group.items {
+            if item.dataset.columns != columns {
+                let indices: Vec<usize> = columns.iter().map(|name| item.dataset.columns.iter().position(|column| column == name).unwrap()).collect();
+                for row in &mut item.dataset.rows { *row = indices.iter().map(|index| row[*index]).collect(); }
+                item.dataset.columns = columns.clone();
+            }
+            item.dataset.default_x = Some(group.x.clone());
+            item.dataset.default_y = Some(group.y.clone());
+        }
+    }
+    (groups, errors)
+}
+
 #[no_mangle]
-pub unsafe extern "C" fn plots_read_dataset(path: *const c_char) -> *mut c_char {
-    let result = CStr::from_ptr(path).to_str().map_err(|e| e.to_string()).and_then(parse_file);
+pub unsafe extern "C" fn plots_read_groups(paths: *const c_char) -> *mut c_char {
+    let result = CStr::from_ptr(paths).to_str().map_err(|e| e.to_string())
+        .and_then(|text| serde_json::from_str::<Vec<String>>(text).map_err(|e| e.to_string()));
     let value = match result {
-        Ok(dataset) => serde_json::json!({"data": dataset}),
-        Err(error) => serde_json::json!({"error": error}),
+        Ok(paths) => {
+            let (groups, errors) = group_files(&paths);
+            serde_json::json!({"groups": groups, "errors": errors})
+        }
+        Err(error) => serde_json::json!({"groups": [], "errors": [error]}),
     };
     CString::new(value.to_string()).unwrap().into_raw()
 }
@@ -236,6 +289,61 @@ pub unsafe extern "C" fn plots_free_string(value: *mut c_char) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn group_fixture(tag: &str, files: &[(&str, &str, &str, &str)]) -> (std::path::PathBuf, Vec<String>) {
+        let directory = std::env::temp_dir().join(format!("plots-group-{}-{tag}", std::process::id()));
+        let mut paths = Vec::new();
+        for (name, content, x, y) in files {
+            let folder = directory.join(name);
+            fs::create_dir_all(&folder).unwrap();
+            let path = folder.join("data.csv");
+            fs::write(&path, content).unwrap();
+            fs::write(folder.join("metadata.json"), serde_json::json!({"default_x": x, "default_y": y}).to_string()).unwrap();
+            paths.push(path.to_string_lossy().into_owned());
+        }
+        (directory, paths)
+    }
+
+    #[test]
+    fn groups_shared_axes_and_aligns_columns() {
+        let (directory, mut paths) = group_fixture("align", &[
+            ("a", "Field,Moment,Extra\n1,10,99\n", "Field", "Moment"),
+            ("b", "Moment,Field\n20,2\n", "Field", "Moment"),
+        ]);
+        paths.push(paths[0].clone());
+        let (groups, errors) = group_files(&paths);
+        assert!(errors.is_empty());
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].items.len(), 2);
+        assert_eq!(groups[0].items[1].dataset.columns, vec!["Field", "Moment"]);
+        assert_eq!(groups[0].items[1].dataset.rows, vec![vec![2.0, 20.0]]);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn separates_different_default_axes_even_with_identical_columns() {
+        let (directory, paths) = group_fixture("axes", &[
+            ("mh", "Field,Temperature,Moment\n1,30,10\n", "Field", "Moment"),
+            ("mt", "Field,Temperature,Moment\n1,30,20\n", "Temperature", "Moment"),
+        ]);
+        let (groups, errors) = group_files(&paths);
+        assert!(errors.is_empty());
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].x, "Field");
+        assert_eq!(groups[1].x, "Temperature");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn reports_failed_files_without_discarding_valid_files() {
+        let (directory, mut paths) = group_fixture("errors", &[("a", "X,Y\n1,2\n", "X", "Y")]);
+        paths.push(directory.join("missing.csv").to_string_lossy().into_owned());
+        let (groups, errors) = group_files(&paths);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains("missing.csv"));
+        fs::remove_dir_all(directory).unwrap();
+    }
 
     const BASE: &str = "/Users/okadaharuto/Library/CloudStorage/GoogleDrive-ryutan521@gmail.com/マイドライブ/Lab/Database_legacy/rawdata";
 
