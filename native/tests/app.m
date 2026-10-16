@@ -8,10 +8,64 @@ static void Check(BOOL value, NSString *message) {
     }
     checks++;
 }
+static NSBitmapImageRep *RenderBitmap(NSSize size, void (^draw)(void)) {
+    NSBitmapImageRep *bitmap = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                       pixelsWide:ceil(size.width)
+                                                                       pixelsHigh:ceil(size.height)
+                                                                    bitsPerSample:8
+                                                                  samplesPerPixel:4
+                                                                         hasAlpha:YES
+                                                                         isPlanar:NO
+                                                                   colorSpaceName:NSDeviceRGBColorSpace
+                                                                      bytesPerRow:0
+                                                                     bitsPerPixel:0];
+    bitmap.size = size;
+    [NSGraphicsContext saveGraphicsState];
+    NSGraphicsContext.currentContext = [NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap];
+    draw();
+    [NSGraphicsContext restoreGraphicsState];
+    return bitmap;
+}
 int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        NSRect original = NSMakeRect(100, 200, 420, 310);
+        NSSize minimum = NSMakeSize(240, 170), maximum = NSMakeSize(800, 600);
+        struct {
+            NSPoint hit;
+            PlotResizeEdge edge;
+            NSRect frame;
+        } resizeCases[] = {
+            {{1, 155}, PlotResizeLeft, {{120, 200}, {400, 310}}},
+            {{419, 155}, PlotResizeRight, {{100, 200}, {440, 310}}},
+            {{210, 1}, PlotResizeBottom, {{100, 230}, {420, 280}}},
+            {{210, 309}, PlotResizeTop, {{100, 200}, {420, 340}}},
+            {{1, 1}, PlotResizeLeft | PlotResizeBottom, {{120, 230}, {400, 280}}},
+            {{419, 1}, PlotResizeRight | PlotResizeBottom, {{100, 230}, {440, 280}}},
+            {{1, 309}, PlotResizeLeft | PlotResizeTop, {{120, 200}, {400, 340}}},
+            {{419, 309}, PlotResizeRight | PlotResizeTop, {{100, 200}, {440, 340}}},
+        };
+        for (NSUInteger i = 0; i < sizeof(resizeCases) / sizeof(resizeCases[0]); i++) {
+            Check(PlotResizeHit(resizeCases[i].hit, original.size) == resizeCases[i].edge,
+                  @"each edge and corner can start resizing");
+            Check(NSEqualRects(
+                      PlotResizeFrame(original, NSMakePoint(20, 30), resizeCases[i].edge, minimum, maximum),
+                      resizeCases[i].frame),
+                  @"resizing keeps the opposite edges fixed");
+        }
+        Check(NSEqualRects(PlotResizeFrame(original, NSMakePoint(1000, 1000),
+                                           PlotResizeLeft | PlotResizeBottom, minimum, maximum),
+                           NSMakeRect(280, 340, 240, 170)),
+              @"minimum size preserves the opposite corner");
+        Check(NSEqualRects(PlotResizeFrame(original, NSMakePoint(-1000, -1000),
+                                           PlotResizeLeft | PlotResizeBottom, minimum, maximum),
+                           NSMakeRect(-280, -90, 800, 600)),
+              @"maximum size preserves the opposite corner");
+        Check(PlotResizeHit(NSMakePoint(200, 296), original.size) == 0 &&
+                  PlotResizeHit(NSMakePoint(16, 296), original.size) == 0 &&
+                  PlotResizeHit(NSMakePoint(210, 155), original.size) == 0,
+              @"header dragging, buttons and plot interactions remain outside resize regions");
         PlotApp *app = [PlotApp new];
         app.renderer = [Renderer new];
         [app makeToolbar];
@@ -105,6 +159,37 @@ int main(void) {
                   fabs(c.charts[0].plotRect.size.height - c.charts[1].plotRect.size.height) < 1 &&
                   app.ySelects[1].frame.origin.x >= 16 && app.yLabels[1].frame.origin.x >= 6,
               @"only bottom plot labels shared X and added Y rows have label padding");
+        for (NSUInteger i = 0; i < app.yLabels.count; i++)
+            Check(NSMinX(app.ySelects[i].frame) - NSMaxX(app.yLabels[i].frame) >= 8,
+                  @"Y labels have eight points of separation from selectors");
+        for (NSView *view in app.toolbar.contentView.subviews)
+            if ([view isKindOfClass:NSTextField.class] && [((NSTextField *)view).stringValue isEqual:@"X"])
+                Check(NSMinX(app.xSelect.frame) - NSMaxX(view.frame) >= 8,
+                      @"X label has eight points of separation from selector");
+        ToolbarShadowView *shadow = (ToolbarShadowView *)app.toolbarShadow.contentView;
+        NSBitmapImageRep *shadowPixels = RenderBitmap(shadow.bounds.size, ^{
+            [shadow drawRect:shadow.bounds];
+        });
+        NSBitmapImageRep *surfaceMask = RenderBitmap(shadow.bounds.size, ^{
+            [NSColor.blackColor setFill];
+            [shadow.silhouette fill];
+        });
+        NSUInteger outerShadow = 0, innerShadow = 0;
+        for (NSInteger y = 0; y < shadowPixels.pixelsHigh; y++)
+            for (NSInteger x = 0; x < shadowPixels.pixelsWide; x++) {
+                CGFloat alpha = [shadowPixels colorAtX:x y:y].alphaComponent;
+                CGFloat surface = [surfaceMask colorAtX:x y:y].alphaComponent;
+                if (surface > .999 && alpha > .01)
+                    innerShadow++;
+                if (surface < .001 && alpha > .02)
+                    outerShadow++;
+            }
+        Check(outerShadow > 50 && innerShadow == 0,
+              @"toolbar shadow appears outside the joined outline and never inside or across its seam");
+        [[shadowPixels representationUsingType:NSBitmapImageFileTypePNG
+                                    properties:@{}] writeToFile:@"build/toolbar-shadow.png" atomically:YES];
+        Check(app.toolbarShadow.ignoresMouseEvents && !app.toolbarShadow.canBecomeKeyWindow,
+              @"shadow cannot intercept clicks or become key");
         Bounds unchanged = c.charts[1].range;
         [app.ySelects[0] selectItemWithTitle:@"X"];
         [app action:app.ySelects[0]];
@@ -181,17 +266,34 @@ int main(void) {
         [c.pin performClick:nil];
         Check(c.window.level == NSNormalWindowLevel && c.pin.state == NSControlStateValueOff,
               @"second pin click restores normal level");
+        Check(app.toolbarShadow.parentWindow == app.toolbar && app.toolbarShadow.visible,
+              @"focused toolbar owns its shadow");
+        NSRect beforeShadowMove = app.toolbarShadow.frame;
         NSRect beforeMove = app.toolbar.frame;
         [c.window setFrameOrigin:NSMakePoint(c.window.frame.origin.x + 53, c.window.frame.origin.y - 27)];
         Check(fabs(app.toolbar.frame.origin.x - beforeMove.origin.x - 53) < 1 &&
                   fabs(app.toolbar.frame.origin.y - beforeMove.origin.y + 27) < 1,
               @"AppKit moves toolbar with plot by the same displacement");
+        Check(fabs(app.toolbarShadow.frame.origin.x - beforeShadowMove.origin.x - 53) < 1 &&
+                  fabs(app.toolbarShadow.frame.origin.y - beforeShadowMove.origin.y + 27) < 1,
+              @"shadow follows the plot movement without an independent offset");
         [c.window setContentSize:NSMakeSize(460, 350)];
         Check(fabs(NSMinY(c.window.frame) - NSMaxY(app.toolbar.frame) - 6) < 1, @"resize keeps toolbar gap");
         PlotController *other = [app newPlot:g];
         [other addY];
         Check(app.toolbar.parentWindow == other.window && app.target == other,
               @"focus transfers toolbar ownership");
+        NSRect beforeResize = other.window.frame;
+        for (NSUInteger i = 0; i < sizeof(resizeCases) / sizeof(resizeCases[0]); i++) {
+            NSRect resized = PlotResizeFrame(beforeResize, NSMakePoint(6, 8), resizeCases[i].edge,
+                                             other.window.minSize, other.window.maxSize);
+            [other.window setFrame:resized display:YES];
+            Check(NSMinX(app.toolbar.frame) == NSMinX(other.window.frame) &&
+                      NSMaxY(app.toolbar.frame) + 6 == NSMinY(other.window.frame) &&
+                      NSMaxY(app.yStack.frame) == NSMinY(app.toolbar.frame),
+                  @"toolbar and Y extension remain attached after resizing from each edge and corner");
+        }
+        [other.window setFrame:beforeResize display:YES];
         NSRect attached = app.toolbar.frame;
         [c.window setFrameOrigin:NSMakePoint(110, 230)];
         Check(NSEqualRects(attached, app.toolbar.frame), @"inactive plot cannot move toolbar");
@@ -210,8 +312,9 @@ int main(void) {
         Check(app.target == other && app.toolbar.parentWindow == other.window,
               @"toolbar interaction retains owner");
         [other.window close];
-        Check(app.toolbar.parentWindow == nil && app.yStack.parentWindow == nil,
-              @"closing owner detaches toolbar and Y controls");
+        Check(app.toolbar.parentWindow == nil && app.yStack.parentWindow == nil &&
+                  app.toolbarShadow.parentWindow == nil && !app.toolbarShadow.visible,
+              @"closing owner detaches toolbar, Y controls and shadow");
         [c.window makeKeyAndOrderFront:nil];
         [app syncFocus];
         Check(app.toolbar.parentWindow == c.window, @"remaining plot reclaims toolbar");

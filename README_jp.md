@@ -7,8 +7,10 @@
 </div>
 
 <p align="center">
-  <img src="images/light.png" width="49%" alt="Plot、ライトモード">
-  <img src="images/dark.png" width="49%" alt="Plot、ダークモード">
+  <img src="images/light.png" width="100%" alt="Plot、ライトモード">
+</p>
+<p align="center">
+  <img src="images/dark.png" width="100%" alt="Plot、ダークモード">
 </p>
 
 ---

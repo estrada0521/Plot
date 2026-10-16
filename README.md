@@ -9,8 +9,10 @@ A macOS app for instantly plotting CSV / DAT / RAS / SPEC TXT files.
 </div>
 
 <p align="center">
-  <img src="images/light.png" width="49%" alt="Plot, light mode">
-  <img src="images/dark.png" width="49%" alt="Plot, dark mode">
+  <img src="images/light.png" width="100%" alt="Plot, light mode">
+</p>
+<p align="center">
+  <img src="images/dark.png" width="100%" alt="Plot, dark mode">
 </p>
 
 ---

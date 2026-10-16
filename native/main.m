@@ -27,15 +27,9 @@ static void DrawHeader(NSRect r, BOOL separator) {
                                  NSCompositingOperationSourceOver);
     }
 }
-@interface ToolbarSurface : NSView
-@property(nonatomic) BOOL joinsBelow, joinsAbove;
-@property(nonatomic) CGFloat joinX;
-@end
-@implementation ToolbarSurface
-- (NSBezierPath *)outlineInRect:(NSRect)r {
+static NSBezierPath *ToolbarOutline(NSRect r, BOOL joinsAbove, BOOL joinsBelow) {
     CGFloat left = NSMinX(r), right = NSMaxX(r), bottom = NSMinY(r), top = NSMaxY(r);
-    CGFloat bl = 6, br = self.joinsBelow ? 0 : 6, tl = self.joinsAbove ? 0 : 6, tr = self.joinsAbove ? 0 : 6,
-            k = .55228475;
+    CGFloat bl = 6, br = joinsBelow ? 0 : 6, tl = joinsAbove ? 0 : 6, tr = joinsAbove ? 0 : 6, k = .55228475;
     NSBezierPath *p = [NSBezierPath bezierPath];
     [p moveToPoint:NSMakePoint(left + bl, bottom)];
     [p lineToPoint:NSMakePoint(right - br, bottom)];
@@ -56,6 +50,15 @@ static void DrawHeader(NSRect r, BOOL separator) {
         controlPoint2:NSMakePoint(left + bl - k * bl, bottom)];
     [p closePath];
     return p;
+}
+
+@interface ToolbarSurface : NSView
+@property(nonatomic) BOOL joinsBelow, joinsAbove;
+@property(nonatomic) CGFloat joinX;
+@end
+@implementation ToolbarSurface
+- (NSBezierPath *)outlineInRect:(NSRect)r {
+    return ToolbarOutline(r, self.joinsAbove, self.joinsBelow);
 }
 - (void)drawRect:(NSRect)dirty {
     BOOL dark = DarkChrome();
@@ -107,6 +110,47 @@ static void DrawHeader(NSRect r, BOOL separator) {
     }
 }
 @end
+static const CGFloat ToolbarShadowMargin = 20;
+@interface ToolbarShadowView : NSView
+@property(nonatomic) NSRect mainRect, stackRect;
+@property(nonatomic) BOOL hasStack;
+@property(nonatomic) NSBezierPath *silhouette;
+- (void)configureMain:(NSRect)main stack:(NSRect)stack hasStack:(BOOL)hasStack;
+@end
+@implementation ToolbarShadowView
+- (void)configureMain:(NSRect)main stack:(NSRect)stack hasStack:(BOOL)hasStack {
+    if (self.silhouette && NSEqualRects(self.mainRect, main) && NSEqualRects(self.stackRect, stack) &&
+        self.hasStack == hasStack)
+        return;
+    self.mainRect = main;
+    self.stackRect = stack;
+    self.hasStack = hasStack;
+    NSBezierPath *outline = ToolbarOutline(main, NO, hasStack);
+    if (hasStack)
+        [outline appendBezierPath:ToolbarOutline(stack, YES, NO)];
+    self.silhouette = outline;
+    self.needsDisplay = YES;
+}
+- (void)drawRect:(NSRect)dirty {
+    if (!self.silhouette)
+        return;
+    [NSGraphicsContext saveGraphicsState];
+    // Mask out the whole joined surface, so no shadow shows through the translucent controls or seam.
+    NSBezierPath *outside = [NSBezierPath bezierPathWithRect:self.bounds];
+    [outside appendBezierPath:self.silhouette];
+    outside.windingRule = NSWindingRuleEvenOdd;
+    [outside addClip];
+    NSShadow *shadow = [NSShadow new];
+    shadow.shadowColor = [NSColor.blackColor colorWithAlphaComponent:.28];
+    shadow.shadowBlurRadius = 9;
+    shadow.shadowOffset = NSMakeSize(0, -3);
+    [shadow set];
+    [NSColor.blackColor setFill];
+    [self.silhouette fill];
+    [NSGraphicsContext restoreGraphicsState];
+}
+@end
+
 @interface IconButton : NSButton
 @property(nonatomic) BOOL hovered;
 @property(nonatomic) NSTrackingArea *hoverTracking;
@@ -214,7 +258,7 @@ static NSPanel *MakePanel(NSString *title, NSSize size) {
     panel.title = title;
     panel.releasedWhenClosed = NO;
     panel.opaque = YES;
-    panel.hasShadow = NO;
+    panel.hasShadow = YES;
     panel.backgroundColor = NSColor.controlBackgroundColor;
     panel.contentView = [[PanelChrome alloc] initWithFrame:panel.contentView.bounds];
     NSButton *close =
@@ -260,6 +304,91 @@ static void Alert(NSString *title, NSString *message) {
     a.informativeText = message ?: @"";
     [a runModal];
 }
+typedef NS_OPTIONS(NSUInteger, PlotResizeEdge) {
+    PlotResizeLeft = 1 << 0,
+    PlotResizeRight = 1 << 1,
+    PlotResizeBottom = 1 << 2,
+    PlotResizeTop = 1 << 3,
+};
+static const CGFloat PlotResizeBorder = 6, PlotResizeCorner = 12;
+static const CGFloat ToolbarYInset = 26, ToolbarYWidth = 158;
+
+static PlotResizeEdge PlotResizeHit(NSPoint p, NSSize size) {
+    if (p.x < 0 || p.y < 0 || p.x > size.width || p.y > size.height)
+        return 0;
+    PlotResizeEdge horizontal = p.x < PlotResizeCorner                 ? PlotResizeLeft
+                                : p.x >= size.width - PlotResizeCorner ? PlotResizeRight
+                                                                       : 0;
+    PlotResizeEdge vertical = p.y < PlotResizeCorner                  ? PlotResizeBottom
+                              : p.y >= size.height - PlotResizeCorner ? PlotResizeTop
+                                                                      : 0;
+    if (horizontal && vertical)
+        return horizontal | vertical;
+    if (p.x < PlotResizeBorder)
+        return PlotResizeLeft;
+    if (p.x >= size.width - PlotResizeBorder)
+        return PlotResizeRight;
+    if (p.y < PlotResizeBorder)
+        return PlotResizeBottom;
+    if (p.y >= size.height - PlotResizeBorder)
+        return PlotResizeTop;
+    return 0;
+}
+static NSRect PlotResizeFrame(NSRect original, NSPoint delta, PlotResizeEdge edges, NSSize minimum,
+                              NSSize maximum) {
+    NSRect r = original;
+    if (edges & (PlotResizeLeft | PlotResizeRight)) {
+        CGFloat width = original.size.width + (edges & PlotResizeLeft ? -delta.x : delta.x);
+        r.size.width = fmin(fmax(width, minimum.width), fmax(minimum.width, maximum.width));
+        if (edges & PlotResizeLeft)
+            r.origin.x = NSMaxX(original) - r.size.width;
+    }
+    if (edges & (PlotResizeTop | PlotResizeBottom)) {
+        CGFloat height = original.size.height + (edges & PlotResizeBottom ? -delta.y : delta.y);
+        r.size.height = fmin(fmax(height, minimum.height), fmax(minimum.height, maximum.height));
+        if (edges & PlotResizeBottom)
+            r.origin.y = NSMaxY(original) - r.size.height;
+    }
+    return r;
+}
+static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
+    BOOL horizontal = edges & (PlotResizeLeft | PlotResizeRight);
+    BOOL vertical = edges & (PlotResizeTop | PlotResizeBottom);
+    if (!vertical)
+        return NSCursor.resizeLeftRightCursor;
+    if (!horizontal)
+        return NSCursor.resizeUpDownCursor;
+    static NSCursor *diagonals[2];
+    BOOL rising = edges == (PlotResizeLeft | PlotResizeBottom) || edges == (PlotResizeRight | PlotResizeTop);
+    if (!diagonals[rising]) {
+        NSImage *image = [NSImage imageWithSize:NSMakeSize(24, 24)
+                                        flipped:NO
+                                 drawingHandler:^BOOL(NSRect rect) {
+                                     NSBezierPath *path = [NSBezierPath bezierPath];
+                                     CGFloat a = rising ? 5 : 19, b = rising ? 19 : 5, step = rising ? 5 : -5;
+                                     [path moveToPoint:NSMakePoint(5, a)];
+                                     [path lineToPoint:NSMakePoint(19, b)];
+                                     [path moveToPoint:NSMakePoint(5, a + step)];
+                                     [path lineToPoint:NSMakePoint(5, a)];
+                                     [path lineToPoint:NSMakePoint(10, a)];
+                                     [path moveToPoint:NSMakePoint(14, b)];
+                                     [path lineToPoint:NSMakePoint(19, b)];
+                                     [path lineToPoint:NSMakePoint(19, b - step)];
+                                     path.lineCapStyle = NSLineCapStyleRound;
+                                     path.lineJoinStyle = NSLineJoinStyleRound;
+                                     [NSColor.whiteColor setStroke];
+                                     path.lineWidth = 3.5;
+                                     [path stroke];
+                                     [NSColor.blackColor setStroke];
+                                     path.lineWidth = 1.5;
+                                     [path stroke];
+                                     return YES;
+                                 }];
+        diagonals[rising] = [[NSCursor alloc] initWithImage:image hotSpot:NSMakePoint(12, 12)];
+    }
+    return diagonals[rising];
+}
+
 @interface PlotWindow : NSWindow
 @end
 @implementation PlotWindow
@@ -270,26 +399,44 @@ static void Alert(NSString *title, NSString *message) {
     return YES;
 }
 - (void)sendEvent:(NSEvent *)e {
-    NSPoint p = e.locationInWindow;
-    if (e.type == NSEventTypeLeftMouseDown && p.x > 82 && p.y > self.frame.size.height - 28) {
-        [self makeKeyAndOrderFront:nil];
-        [self performWindowDragWithEvent:e];
+    if (e.type != NSEventTypeLeftMouseDown) {
+        [super sendEvent:e];
         return;
     }
-    if (e.type == NSEventTypeLeftMouseDown && p.x > self.frame.size.width - 12 && p.y < 12) {
+    NSPoint p = e.locationInWindow;
+    PlotResizeEdge edges = PlotResizeHit(p, self.frame.size);
+    // Edges take precedence over header dragging, including the top edge and corners.
+    if (edges) {
+        [self makeKeyAndOrderFront:nil];
         NSRect original = self.frame;
-        NSPoint start = NSEvent.mouseLocation;
-        while (YES) {
-            NSEvent *next = [self nextEventMatchingMask:NSEventMaskLeftMouseDragged | NSEventMaskLeftMouseUp];
-            if (next.type == NSEventTypeLeftMouseUp)
-                break;
-            NSPoint now = NSEvent.mouseLocation;
-            NSRect r = original;
-            r.size.width = MAX(self.minSize.width, original.size.width + now.x - start.x);
-            r.size.height = MAX(self.minSize.height, original.size.height - now.y + start.y);
-            r.origin.y = NSMaxY(original) - r.size.height;
-            [self setFrame:r display:YES];
+        NSPoint start = [self convertPointToScreen:p];
+        [PlotResizeCursor(edges) push];
+        @try {
+            while (YES) {
+                NSEvent *next =
+                    [NSApp nextEventMatchingMask:NSEventMaskLeftMouseDragged | NSEventMaskLeftMouseUp
+                                       untilDate:NSDate.distantFuture
+                                          inMode:NSEventTrackingRunLoopMode
+                                         dequeue:YES];
+                if (!next)
+                    break;
+                NSPoint now = NSEvent.mouseLocation;
+                NSRect frame = PlotResizeFrame(original, NSMakePoint(now.x - start.x, now.y - start.y), edges,
+                                               self.minSize, self.maxSize);
+                if (!NSEqualRects(frame, self.frame))
+                    [self setFrame:frame display:YES];
+                if (next.type == NSEventTypeLeftMouseUp)
+                    break;
+            }
+        } @finally {
+            [NSCursor pop];
+            [self invalidateCursorRectsForView:self.contentView];
         }
+        return;
+    }
+    if (p.x > 82 && p.y > self.frame.size.height - 28) {
+        [self makeKeyAndOrderFront:nil];
+        [self performWindowDragWithEvent:e];
         return;
     }
     [super sendEvent:e];
@@ -312,6 +459,7 @@ static void Alert(NSString *title, NSString *message) {
 @property(nonatomic) Renderer *renderer;
 @property(nonatomic) NSMutableArray<PlotController *> *controllers;
 @property(nonatomic) ToolbarPanel *toolbar, *yStack;
+@property(nonatomic) NSWindow *toolbarShadow;
 @property(nonatomic, weak) PlotController *target;
 @property(nonatomic) NSPopUpButton *xSelect, *ySelect;
 @property(nonatomic) NSMutableArray<NSPopUpButton *> *ySelects;
@@ -328,6 +476,8 @@ static void Alert(NSString *title, NSString *message) {
 - (void)updateToolbar;
 - (void)placeToolbar;
 - (void)syncYStack;
+- (void)layoutToolbarShadow;
+- (void)syncToolbarShadow;
 - (PlotController *)newPlot:(PLGroup *)group;
 - (void)openPaths:(NSArray<NSString *> *)paths reply:(BOOL)reply;
 - (void)action:(id)sender;
@@ -379,9 +529,30 @@ static void Alert(NSString *title, NSString *message) {
     [grip lineToPoint:NSMakePoint(self.bounds.size.width - 2, 8)];
     [grip stroke];
 }
+- (void)resetCursorRects {
+    CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
+    CGFloat edge = PlotResizeBorder, corner = PlotResizeCorner;
+    [self addCursorRect:NSMakeRect(0, corner, edge, MAX(0, h - 2 * corner))
+                 cursor:NSCursor.resizeLeftRightCursor];
+    [self addCursorRect:NSMakeRect(w - edge, corner, edge, MAX(0, h - 2 * corner))
+                 cursor:NSCursor.resizeLeftRightCursor];
+    [self addCursorRect:NSMakeRect(corner, 0, MAX(0, w - 2 * corner), edge)
+                 cursor:NSCursor.resizeUpDownCursor];
+    [self addCursorRect:NSMakeRect(corner, h - edge, MAX(0, w - 2 * corner), edge)
+                 cursor:NSCursor.resizeUpDownCursor];
+    [self addCursorRect:NSMakeRect(0, 0, corner, corner)
+                 cursor:PlotResizeCursor(PlotResizeLeft | PlotResizeBottom)];
+    [self addCursorRect:NSMakeRect(w - corner, 0, corner, corner)
+                 cursor:PlotResizeCursor(PlotResizeRight | PlotResizeBottom)];
+    [self addCursorRect:NSMakeRect(0, h - corner, corner, corner)
+                 cursor:PlotResizeCursor(PlotResizeLeft | PlotResizeTop)];
+    [self addCursorRect:NSMakeRect(w - corner, h - corner, corner, corner)
+                 cursor:PlotResizeCursor(PlotResizeRight | PlotResizeTop)];
+}
 - (void)layout {
     [super layout];
     [self.controller layout];
+    [self.window invalidateCursorRectsForView:self];
 }
 @end
 
@@ -409,7 +580,7 @@ static void Alert(NSString *title, NSString *message) {
     self.window.minSize = NSMakeSize(240, 170);
     self.window.opaque = YES;
     self.window.backgroundColor = NSColor.whiteColor;
-    self.window.hasShadow = NO;
+    self.window.hasShadow = YES;
     self.root = [[PlotRoot alloc] initWithFrame:self.window.contentView.bounds];
     self.root.controller = self;
     self.window.contentView = self.root;
@@ -1204,17 +1375,17 @@ static void Alert(NSString *title, NSString *message) {
         x += w + 6;
     }
     [self.toolbar.contentView addSubview:Label(@"X", NSMakeRect(x + 2, 7, 12, 16))];
-    x += 12;
+    x += 22;
     self.xSelect = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(x, 5, 98, 24) pullsDown:NO];
     self.xSelect.target = self;
     self.xSelect.action = @selector(action:);
     self.xSelect.identifier = @"x-select";
     self.xSelect.accessibilityLabel = @"X column";
     [self.toolbar.contentView addSubview:self.xSelect];
-    x += 100;
-    x += 12;
+    x += 104;
+    x += 22;
     self.yColumnX = x;
-    self.yStack = [[ToolbarPanel alloc] initWithContentRect:NSMakeRect(0, 0, 148, 34)
+    self.yStack = [[ToolbarPanel alloc] initWithContentRect:NSMakeRect(0, 0, ToolbarYWidth, 34)
                                                   styleMask:NSWindowStyleMaskBorderless
                                                     backing:NSBackingStoreBuffered
                                                       defer:NO];
@@ -1236,6 +1407,20 @@ static void Alert(NSString *title, NSString *message) {
     NSRect r = self.toolbar.frame;
     r.size.width = x + 132;
     [self.toolbar setFrame:r display:NO];
+    self.toolbarShadow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 1, 1)
+                                                     styleMask:NSWindowStyleMaskBorderless
+                                                       backing:NSBackingStoreBuffered
+                                                         defer:NO];
+    self.toolbarShadow.releasedWhenClosed = NO;
+    self.toolbarShadow.opaque = NO;
+    self.toolbarShadow.backgroundColor = NSColor.clearColor;
+    self.toolbarShadow.hasShadow = NO;
+    self.toolbarShadow.ignoresMouseEvents = YES;
+    self.toolbarShadow.collectionBehavior =
+        NSWindowCollectionBehaviorTransient | NSWindowCollectionBehaviorIgnoresCycle;
+    self.toolbarShadow.contentView =
+        [[ToolbarShadowView alloc] initWithFrame:self.toolbarShadow.contentView.bounds];
+    self.toolbarShadow.contentView.accessibilityElement = NO;
 }
 - (PlotController *)newPlot:(PLGroup *)group {
     PlotController *previous = self.target;
@@ -1260,9 +1445,37 @@ static void Alert(NSString *title, NSString *message) {
     self.toolbar.level = c.window.level;
     self.yStack.level = c.window.level;
     NSRect stack = self.yStack.frame;
-    stack.origin = NSMakePoint(NSMinX(r) + self.yColumnX - 16, NSMinY(r) - stack.size.height);
+    stack.origin = NSMakePoint(NSMinX(r) + self.yColumnX - ToolbarYInset, NSMinY(r) - stack.size.height);
     if (!NSEqualRects(stack, self.yStack.frame))
         [self.yStack setFrame:stack display:YES];
+    [self layoutToolbarShadow];
+}
+- (void)layoutToolbarShadow {
+    if (!self.target || !self.toolbarShadow)
+        return;
+    BOOL hasStack = self.ySelects.count > 1;
+    NSRect main = self.toolbar.frame, stack = hasStack ? self.yStack.frame : NSZeroRect;
+    NSRect frame =
+        NSInsetRect(hasStack ? NSUnionRect(main, stack) : main, -ToolbarShadowMargin, -ToolbarShadowMargin);
+    if (!NSEqualRects(frame, self.toolbarShadow.frame))
+        [self.toolbarShadow setFrame:frame display:NO];
+    self.toolbarShadow.level = self.toolbar.level;
+    main = NSOffsetRect(main, -frame.origin.x, -frame.origin.y);
+    if (hasStack)
+        stack = NSOffsetRect(stack, -frame.origin.x, -frame.origin.y);
+    [(ToolbarShadowView *)self.toolbarShadow.contentView configureMain:main stack:stack hasStack:hasStack];
+}
+- (void)syncToolbarShadow {
+    if (self.target && NSApp.isActive && self.toolbar.visible &&
+        self.toolbar.parentWindow == self.target.window) {
+        if (self.toolbarShadow.parentWindow != self.toolbar)
+            [self.toolbar addChildWindow:self.toolbarShadow ordered:NSWindowBelow];
+        if (!self.toolbarShadow.visible)
+            [self.toolbarShadow orderWindow:NSWindowBelow relativeTo:self.toolbar.windowNumber];
+    } else {
+        [self.toolbarShadow.parentWindow removeChildWindow:self.toolbarShadow];
+        [self.toolbarShadow orderOut:nil];
+    }
 }
 - (void)syncFocus {
     NSWindow *key = NSApp.keyWindow;
@@ -1288,6 +1501,7 @@ static void Alert(NSString *title, NSString *message) {
     if (!active) {
         [self.toolbar.parentWindow removeChildWindow:self.toolbar];
         [self.toolbar orderOut:nil];
+        [self syncToolbarShadow];
         return;
     }
     [self updateToolbar];
@@ -1313,6 +1527,8 @@ static void Alert(NSString *title, NSString *message) {
         if (restoreFocus && owner.window.visible)
             [owner.window makeKeyWindow];
     }
+    [self layoutToolbarShadow];
+    [self syncToolbarShadow];
 }
 - (void)updateToolbar {
     PlotController *c = self.target;
@@ -1361,10 +1577,10 @@ static void Alert(NSString *title, NSString *message) {
     }
     ToolbarSurface *surface = (ToolbarSurface *)self.toolbar.contentView;
     surface.joinsBelow = count > 1;
-    surface.joinX = self.yColumnX - 16;
+    surface.joinX = self.yColumnX - ToolbarYInset;
     CGFloat height = MAX(32, (count - 1) * 32);
     if (self.yStack.frame.size.height != height)
-        [self.yStack setContentSize:NSMakeSize(148, height)];
+        [self.yStack setContentSize:NSMakeSize(ToolbarYWidth, height)];
     for (NSUInteger i = 0; i < count; i++) {
         NSPopUpButton *select = self.ySelects[i];
         if (![select.itemTitles isEqual:titles]) {
@@ -1376,9 +1592,9 @@ static void Alert(NSString *title, NSString *message) {
         select.enabled = loaded;
         [select selectItemWithTitle:loaded ? c.ys[i] : @""];
         CGFloat y = i == 0 ? 5 : height - 27 - (i - 1) * 32;
-        CGFloat x = i == 0 ? self.yColumnX : 16;
+        CGFloat x = i == 0 ? self.yColumnX : ToolbarYInset;
         select.frame = NSMakeRect(x, y, 98, 24);
-        self.yLabels[i].frame = NSMakeRect(x - 10, y + 2, 12, 16);
+        self.yLabels[i].frame = NSMakeRect(x - 20, y + 2, 12, 16);
         NSButton *remove = self.yRemoves[i];
         remove.tag = i;
         remove.hidden = i == 0;

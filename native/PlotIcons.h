@@ -118,16 +118,13 @@ static NSImage *PlotIcon(NSString *name, BOOL filled) {
                 CGContextSetRGBFillColor(c, 0, 0, 0, 1);
                 CGContextFillPath(c);
             } else if ([name isEqual:@"outliers"]) {
-                M(4, 19);
-                L(20, 19);
-                O(7, 15, 1.4);
-                O(11, 11, 1.4);
-                O(15, 13, 1.4);
-                O(19, 5, 1.4);
-                M(16.5, 3.5);
-                L(21.5, 8.5);
-                M(21.5, 3.5);
-                L(16.5, 8.5);
+                M(4, 5);
+                L(20, 5);
+                L(14, 12);
+                L(14, 19);
+                L(10, 19);
+                L(10, 12);
+                Z();
             } else if ([name isEqual:@"save-image"]) {
                 M(12, 4);
                 L(12, 14);
