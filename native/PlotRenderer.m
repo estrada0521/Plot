@@ -138,8 +138,9 @@ static void Require(BOOL ok, NSString *message) {
             (vector_float2){(bounds.x - base.x) / base.width, (bounds.y - base.y) / base.height};
         uniforms.span = (vector_float2){bounds.width / base.width, bounds.height / base.height};
         uniforms.points = (uint32_t)(s.raw.length / sizeof(XY));
-        uniforms.color =
-            index == selected ? (vector_float4){0.08, 0.08, 0.08, 1} : (vector_float4){0.72, 0.72, 0.72, 1};
+        PlotPalette palette = PLPlotPalette(view.dark);
+        float gray = index == selected ? palette.selected : palette.context;
+        uniforms.color = (vector_float4){gray, gray, gray, 1};
         uniforms.width =
             (points ? (index == selected ? 4 : 3) : (index == selected ? 2.5 : 1.5)) * view.width;
         [encoder setVertexBuffer:s.buffer offset:0 atIndex:0];

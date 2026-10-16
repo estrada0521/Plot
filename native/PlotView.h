@@ -13,6 +13,7 @@
 @property(nonatomic, readonly) NSRect plotRect;
 - (instancetype)initWithRenderer:(Renderer *)renderer;
 - (void)refresh;
+- (void)refreshAppearance;
 - (void)drawAnnotations;
 - (void)drawAnnotationsForExport;
 - (NSImage *)plotImageAtScale:(CGFloat)scale;

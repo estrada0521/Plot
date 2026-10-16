@@ -7,6 +7,7 @@ struct Viewport {
     float2 pixels;
     float width;
     uint points;
+    uint dark;
     float4 color;
 };
 struct Vertex {

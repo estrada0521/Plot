@@ -519,15 +519,22 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     return YES;
 }
 - (void)drawRect:(NSRect)dirty {
-    [NSColor.whiteColor setFill];
+    PlotPalette palette = PLPlotPalette(PLPlotIsDark(self.effectiveAppearance));
+    [PLPlotGray(palette.background, 1) setFill];
     NSRectFill(self.bounds);
     DrawHeader(NSMakeRect(0, self.bounds.size.height - 28, self.bounds.size.width, 28), NO);
 
-    [NSColor.grayColor setStroke];
+    [PLPlotGray(palette.axis, 1) setStroke];
     NSBezierPath *grip = [NSBezierPath bezierPath];
     [grip moveToPoint:NSMakePoint(self.bounds.size.width - 8, 2)];
     [grip lineToPoint:NSMakePoint(self.bounds.size.width - 2, 8)];
     [grip stroke];
+}
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    PlotPalette palette = PLPlotPalette(PLPlotIsDark(self.effectiveAppearance));
+    self.window.backgroundColor = PLPlotGray(palette.background, 1);
+    self.needsDisplay = YES;
 }
 - (void)resetCursorRects {
     CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
@@ -579,7 +586,8 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     self.window.title = @"Plot";
     self.window.minSize = NSMakeSize(240, 170);
     self.window.opaque = YES;
-    self.window.backgroundColor = NSColor.whiteColor;
+    self.window.backgroundColor =
+        PLPlotGray(PLPlotPalette(PLPlotIsDark(NSApp.effectiveAppearance)).background, 1);
     self.window.hasShadow = YES;
     self.root = [[PlotRoot alloc] initWithFrame:self.window.contentView.bounds];
     self.root.controller = self;
@@ -1257,6 +1265,10 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
                        : [theme isEqual:@"light"] ? [NSAppearance appearanceNamed:NSAppearanceNameAqua]
                                                   : nil;
     for (PlotController *c in self.controllers) {
+        c.window.backgroundColor =
+            PLPlotGray(PLPlotPalette(PLPlotIsDark(c.window.effectiveAppearance)).background, 1);
+        for (PLChart *chart in c.charts)
+            [chart refreshAppearance];
         [c layout];
         [c.root setNeedsDisplay:YES];
         for (NSView *view in c.root.subviews)

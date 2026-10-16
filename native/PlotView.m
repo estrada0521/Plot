@@ -51,11 +51,12 @@ Bounds PLSeriesExtent(NSArray<Series *> *series) {
     self.yName = @"Y";
     self.range = (Bounds){-1, -1, 2, 2};
     self.wantsLayer = YES;
-    self.layer.backgroundColor = NSColor.whiteColor.CGColor;
     self.metal = [[MTKView alloc] initWithFrame:NSZeroRect device:renderer.device];
     self.metal.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
     self.metal.sampleCount = 4;
-    self.metal.clearColor = MTLClearColorMake(1, 1, 1, 1);
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    self.metal.colorspace = colorSpace;
+    CGColorSpaceRelease(colorSpace);
     self.metal.paused = YES;
     self.metal.enableSetNeedsDisplay = YES;
     self.metal.delegate = self;
@@ -63,6 +64,7 @@ Bounds PLSeriesExtent(NSArray<Series *> *series) {
     self.annotation = [PLAnnotation new];
     self.annotation.chart = self;
     [self addSubview:self.annotation];
+    [self refreshAppearance];
     return self;
 }
 - (void)dealloc {
@@ -83,6 +85,18 @@ Bounds PLSeriesExtent(NSArray<Series *> *series) {
     self.metal.frame = self.plotRect;
     self.annotation.frame = self.bounds;
     [self refresh];
+}
+- (void)refreshAppearance {
+    if (!self.metal)
+        return;
+    PlotPalette palette = PLPlotPalette(PLPlotIsDark(self.effectiveAppearance));
+    self.layer.backgroundColor = PLPlotGray(palette.background, 1).CGColor;
+    self.metal.clearColor = MTLClearColorMake(palette.background, palette.background, palette.background, 1);
+    [self refresh];
+}
+- (void)viewDidChangeEffectiveAppearance {
+    [super viewDidChangeEffectiveAppearance];
+    [self refreshAppearance];
 }
 - (void)refresh {
     self.hoverGeneration++;
@@ -116,12 +130,14 @@ static NSString *TickLabel(double value, double step, double origin) {
 - (void)drawAnnotationsIncludingInteraction:(BOOL)interaction {
     NSRect r = self.plotRect;
     Bounds b = self.range;
+    BOOL dark = PLPlotIsDark(self.effectiveAppearance);
+    PlotPalette palette = PLPlotPalette(dark);
     CGContextRef c = NSGraphicsContext.currentContext.CGContext;
     NSDictionary *font = @{
         NSFontAttributeName : [NSFont systemFontOfSize:10],
-        NSForegroundColorAttributeName : NSColor.blackColor
+        NSForegroundColorAttributeName : PLPlotGray(palette.ink, 1)
     };
-    CGContextSetRGBStrokeColor(c, .08, .08, .08, 1);
+    CGContextSetRGBStrokeColor(c, palette.axis, palette.axis, palette.axis, 1);
     CGContextSetLineWidth(c, .7);
     CGContextStrokeRect(c, NSRectToCGRect(r));
     double sx = TickStep(b.width, (NSUInteger)(r.size.width / 65)),
@@ -173,16 +189,16 @@ static NSString *TickLabel(double value, double step, double origin) {
             NSMakeRect(fmax(2, fmin(self.bounds.size.width - size.width - 10, self.hoverPoint.x + 10)),
                        fmax(2, fmin(self.bounds.size.height - size.height - 10, self.hoverPoint.y + 10)),
                        size.width + 8, size.height + 6);
-        [[NSColor.whiteColor colorWithAlphaComponent:.95] setFill];
+        [PLPlotGray(dark ? .12 : 1, .98) setFill];
         NSRectFill(box);
-        [NSColor.grayColor setFill];
+        [PLPlotGray(dark ? .45 : .5, 1) setFill];
         NSFrameRect(box);
         [self.hoverText drawAtPoint:NSMakePoint(box.origin.x + 4, box.origin.y + 3) withAttributes:font];
     }
     if (interaction && self.pan) {
-        [[NSColor colorWithWhite:.2 alpha:.08] setFill];
+        [PLPlotGray(dark ? 1 : .2, dark ? .06 : .08) setFill];
         NSRectFillUsingOperation(r, NSCompositingOperationSourceOver);
-        [[NSColor colorWithWhite:.28 alpha:1] setStroke];
+        [PLPlotGray(dark ? .6 : .28, 1) setStroke];
         NSBezierPath *outline = [NSBezierPath bezierPathWithRect:NSInsetRect(r, 1.5, 1.5)];
         CGFloat dash[] = {4, 3};
         [outline setLineDash:dash count:2 phase:0];
@@ -193,10 +209,10 @@ static NSString *TickLabel(double value, double step, double origin) {
         NSRect box = NSMakeRect(
             fmin(self.dragStart.x, self.dragCurrent.x), fmin(self.dragStart.y, self.dragCurrent.y),
             fabs(self.dragStart.x - self.dragCurrent.x), fabs(self.dragStart.y - self.dragCurrent.y));
-        [[NSColor colorWithWhite:.25 alpha:.20] setFill];
+        [PLPlotGray(dark ? 1 : .25, dark ? .14 : .20) setFill];
         NSRect clipped = NSIntersectionRect(box, r);
         NSRectFillUsingOperation(clipped, NSCompositingOperationSourceOver);
-        [[NSColor colorWithWhite:.15 alpha:1] setFill];
+        [PLPlotGray(dark ? .8 : .15, 1) setFill];
         NSFrameRectWithWidth(clipped, 1);
     }
 }
@@ -204,7 +220,8 @@ static NSString *TickLabel(double value, double step, double origin) {
     if (!view.currentRenderPassDescriptor || !view.currentDrawable)
         return;
     Viewport v = {.pixels = {view.drawableSize.width, view.drawableSize.height},
-                  .width = self.window.backingScaleFactor ?: 1};
+                  .width = self.window.backingScaleFactor ?: 1,
+                  .dark = PLPlotIsDark(self.effectiveAppearance)};
     id<MTLCommandBuffer> command = [self.renderer encode:view.currentRenderPassDescriptor
                                                   series:self.series
                                                 selected:self.selected
@@ -222,6 +239,7 @@ static NSString *TickLabel(double value, double step, double origin) {
 }
 - (void)viewDidMoveToWindow {
     [self.window setAcceptsMouseMovedEvents:YES];
+    [self refreshAppearance];
 }
 - (void)updateTrackingAreas {
     [super updateTrackingAreas];
@@ -426,8 +444,11 @@ static NSString *TickLabel(double value, double step, double origin) {
     pass.colorAttachments[0].resolveTexture = output;
     pass.colorAttachments[0].loadAction = MTLLoadActionClear;
     pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
-    pass.colorAttachments[0].clearColor = MTLClearColorMake(1, 1, 1, 1);
-    Viewport v = {.pixels = {w, h}, .width = scale};
+    BOOL dark = PLPlotIsDark(self.effectiveAppearance);
+    PlotPalette palette = PLPlotPalette(dark);
+    pass.colorAttachments[0].clearColor =
+        MTLClearColorMake(palette.background, palette.background, palette.background, 1);
+    Viewport v = {.pixels = {w, h}, .width = scale, .dark = dark};
     id<MTLCommandBuffer> cmd = [self.renderer encode:pass
                                               series:self.series
                                             selected:self.selected
@@ -457,7 +478,7 @@ static NSString *TickLabel(double value, double step, double origin) {
         return nil;
     NSData *pixels = [NSData dataWithBytes:read.contents length:row * h];
     CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)pixels);
-    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
     CGImageRef image =
         CGImageCreate(w, h, 8, 32, row, space, kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst,
                       provider, NULL, NO, kCGRenderingIntentDefault);

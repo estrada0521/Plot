@@ -2,7 +2,7 @@
 
 # Plot
 
-A macOS app for instantly plotting CSV / DAT / RAS / SPEC TXT files.
+A plotting app for macOS.
 
 [日本語](README_jp.md)
 

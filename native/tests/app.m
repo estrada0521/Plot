@@ -30,6 +30,7 @@ int main(void) {
     @autoreleasepool {
         [NSApplication sharedApplication];
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        NSApp.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
         NSRect original = NSMakeRect(100, 200, 420, 310);
         NSSize minimum = NSMakeSize(240, 170), maximum = NSMakeSize(800, 600);
         struct {
@@ -241,6 +242,41 @@ int main(void) {
             }
         Check(dark > 500, @"PNG contains GPU traces and axes, not a blank Metal layer");
         [png writeToFile:@"build/native-export.png" atomically:YES];
+        id<MTLBuffer> themeBuffer = c.charts[0].series[0].buffer;
+        Bounds themeRange = c.charts[0].range;
+        c.window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        for (PLChart *chart in c.charts)
+            [chart refreshAppearance];
+        NSData *darkPNG = [c panelPNG];
+        NSBitmapImageRep *darkBitmap = [NSBitmapImageRep imageRepWithData:darkPNG];
+        NSColor *darkMargin =
+            [[darkBitmap colorAtX:2 y:80] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+        Check(darkMargin.redComponent < .12 && darkMargin.greenComponent < .12 &&
+                  darkMargin.blueComponent < .12,
+              @"dark export includes the dark plot margins");
+        NSColor *darkCentre =
+            [[darkBitmap colorAtX:200 y:100] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace];
+        Check(darkCentre.redComponent < .2, @"Metal plot background switches to dark");
+        NSUInteger lightPixels = 0;
+        for (NSInteger y = 30; y < darkBitmap.pixelsHigh - 50; y++)
+            for (NSInteger x = 50; x < darkBitmap.pixelsWide - 30; x++)
+                if ([[darkBitmap colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace]
+                        .redComponent > .6)
+                    lightPixels++;
+        Check(lightPixels > 500, @"dark export contains light GPU traces, axes and labels");
+        Bounds themeAfter = c.charts[0].range;
+        Check(c.charts[0].series[0].buffer == themeBuffer &&
+                  memcmp(&themeRange, &themeAfter, sizeof(Bounds)) == 0,
+              @"theme changes preserve data buffers and viewport");
+        [darkPNG writeToFile:@"build/native-export-dark.png" atomically:YES];
+        c.window.appearance = nil;
+        for (PLChart *chart in c.charts)
+            [chart refreshAppearance];
+        NSBitmapImageRep *restored = [NSBitmapImageRep imageRepWithData:[c panelPNG]];
+        Check(
+            [[restored colorAtX:2 y:80] colorUsingColorSpace:NSColorSpace.deviceRGBColorSpace].redComponent >
+                .9,
+            @"returning to light restores the white plot background");
         // Exercise real AppKit key-window and child-window transitions.
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
         [NSApp finishLaunching];

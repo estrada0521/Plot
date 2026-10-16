@@ -2,6 +2,8 @@
 
 # Plot
 
+macOS用のグラフ表示アプリ。
+
 [English](README.md)
 
 </div>

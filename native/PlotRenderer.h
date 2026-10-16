@@ -11,9 +11,24 @@ typedef struct {
 typedef struct {
     vector_float2 minimum, span, pixels;
     float width;
-    uint32_t points;
+    uint32_t points, dark;
     vector_float4 color;
 } Viewport;
+
+typedef struct {
+    double background, ink, axis, selected, context;
+} PlotPalette;
+static inline PlotPalette PLPlotPalette(BOOL dark) {
+    return dark ? (PlotPalette){.07, .88, .68, .92, .42} : (PlotPalette){1, 0, .08, .08, .72};
+}
+static inline BOOL PLPlotIsDark(NSAppearance *appearance) {
+    return [[(appearance ?: NSAppearance.currentDrawingAppearance) bestMatchFromAppearancesWithNames:@[
+        NSAppearanceNameAqua, NSAppearanceNameDarkAqua
+    ]] isEqual:NSAppearanceNameDarkAqua];
+}
+static inline NSColor *PLPlotGray(double value, double alpha) {
+    return [NSColor colorWithSRGBRed:value green:value blue:value alpha:alpha];
+}
 
 @interface Series : NSObject
 @property(nonatomic) NSString *name;

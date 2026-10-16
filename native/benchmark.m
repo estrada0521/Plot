@@ -158,8 +158,8 @@ static void Benchmark(Renderer *renderer, NSUInteger count, NSUInteger windows, 
     }
 }
 
-static NSData *ReadMetal(Renderer *renderer, NSArray<Series *> *series, NSUInteger selected, Bounds bounds,
-                         BOOL points) {
+static NSData *ReadMetalTheme(Renderer *renderer, NSArray<Series *> *series, NSUInteger selected,
+                              Bounds bounds, BOOL points, BOOL dark) {
     const NSUInteger w = 256, h = 128;
     MTLTextureDescriptor *d =
         [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
@@ -177,8 +177,10 @@ static NSData *ReadMetal(Renderer *renderer, NSArray<Series *> *series, NSUInteg
     pass.colorAttachments[0].resolveTexture = output;
     pass.colorAttachments[0].loadAction = MTLLoadActionClear;
     pass.colorAttachments[0].storeAction = MTLStoreActionMultisampleResolve;
-    pass.colorAttachments[0].clearColor = MTLClearColorMake(1, 1, 1, 1);
-    Viewport v = {.pixels = {w, h}, .width = 1};
+    PlotPalette palette = PLPlotPalette(dark);
+    pass.colorAttachments[0].clearColor =
+        MTLClearColorMake(palette.background, palette.background, palette.background, 1);
+    Viewport v = {.pixels = {w, h}, .width = 1, .dark = dark};
     id<MTLCommandBuffer> command = [renderer encode:pass
                                              series:series
                                            selected:selected
@@ -204,6 +206,10 @@ static NSData *ReadMetal(Renderer *renderer, NSArray<Series *> *series, NSUInteg
     Require(command.status == MTLCommandBufferStatusCompleted,
             command.error.localizedDescription ?: @"Readback failed");
     return [NSData dataWithBytes:readback.contents length:w * h * 4];
+}
+static NSData *ReadMetal(Renderer *renderer, NSArray<Series *> *series, NSUInteger selected, Bounds bounds,
+                         BOOL points) {
+    return ReadMetalTheme(renderer, series, selected, bounds, points, NO);
 }
 static unsigned Pixel(NSData *image, int x, int y) {
     return ((const unsigned char *)image.bytes)[(y * 256 + x) * 4];
@@ -253,6 +259,14 @@ static void Verify(Renderer *renderer) {
     Require(DarkNear(image, 128, 64) && Pixel(image, 16, 16) > 245,
             @"FAIL: isolated marker or missing marker");
     puts("PASS: isolated marker and non-finite marker rejection");
+    image = ReadMetalTheme(renderer, @[ sa, sc ], 0, group, NO, YES);
+    Require(Pixel(image, 128, 96) > 210 && Pixel(image, 128, 32) > 70 && Pixel(image, 128, 32) < 150 &&
+                Pixel(image, 16, 64) < 35 && sa.buffer == before,
+            @"FAIL: dark palette must render white selection and gray context without replacing buffers");
+    image = ReadMetalTheme(renderer, @[ sp ], 0, group, YES, YES);
+    Require(Pixel(image, 128, 64) > 210 && Pixel(image, 16, 16) < 35,
+            @"FAIL: dark points must remain visible on the dark background");
+    puts("PASS: dark background, selected and context colors for lines and points");
     XY zoom[] = {{0, 0}, {1e8 - 1, 1}, {1e8, 1}, {1e8 + 1, 1}};
     Series *detail = [[Series alloc] initWithData:[NSData dataWithBytes:zoom length:sizeof(zoom)]
                                              name:@"Deep zoom"
