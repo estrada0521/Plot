@@ -6,7 +6,7 @@
 @property(nonatomic) NSString *xName, *yName;
 @property(nonatomic) Bounds range;
 @property(nonatomic) NSUInteger selected;
-@property(nonatomic) BOOL points, pan;
+@property(nonatomic) BOOL points, pan, showsXLabels;
 @property(nonatomic, copy) void (^changed)(PLChart *chart, BOOL finished);
 @property(nonatomic, copy) void (^selectDataset)(NSInteger delta);
 @property(nonatomic, copy) void (^navigate)(BOOL forward);
@@ -14,6 +14,7 @@
 - (instancetype)initWithRenderer:(Renderer *)renderer;
 - (void)refresh;
 - (void)drawAnnotations;
+- (void)drawAnnotationsForExport;
 - (NSImage *)plotImageAtScale:(CGFloat)scale;
 @end
 Bounds PLSeriesExtent(NSArray<Series *> *series);

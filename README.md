@@ -52,7 +52,6 @@ Built with Objective-C, AppKit and Metal. No external runtime or libraries. [Ren
 - Next / previous X-axis column — `⌘X` / `⇧⌘X`
 - Next / previous Y-axis column — `⌘Y` / `⇧⌘Y`
 - Open the filter window — `⌥⌘F`
-- Open the axes window — `⇧⌥⌘G`
 - Exclude outliers — `⇧⌥⌘R`
 - Settings — `⌘,`
 - Next / previous window — `` ⌘` `` / `` ⇧⌘` ``

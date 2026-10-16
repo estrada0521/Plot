@@ -46,6 +46,7 @@ Bounds PLSeriesExtent(NSArray<Series *> *series) {
         return nil;
     self.renderer = renderer;
     self.series = @[];
+    self.showsXLabels = YES;
     self.xName = @"X";
     self.yName = @"Y";
     self.range = (Bounds){-1, -1, 2, 2};
@@ -73,7 +74,9 @@ Bounds PLSeriesExtent(NSArray<Series *> *series) {
     return YES;
 }
 - (NSRect)plotRect {
-    return NSMakeRect(58, 38, MAX(1, self.bounds.size.width - 76), MAX(1, self.bounds.size.height - 52));
+    CGFloat bottom = self.showsXLabels ? 38 : 12;
+    return NSMakeRect(58, bottom, MAX(1, self.bounds.size.width - 76),
+                      MAX(1, self.bounds.size.height - bottom - 14));
 }
 - (void)layout {
     [super layout];
@@ -105,6 +108,12 @@ static NSString *TickLabel(double value, double step, double origin) {
     return [NSString stringWithFormat:@"%.6g", v];
 }
 - (void)drawAnnotations {
+    [self drawAnnotationsIncludingInteraction:YES];
+}
+- (void)drawAnnotationsForExport {
+    [self drawAnnotationsIncludingInteraction:NO];
+}
+- (void)drawAnnotationsIncludingInteraction:(BOOL)interaction {
     NSRect r = self.plotRect;
     Bounds b = self.range;
     CGContextRef c = NSGraphicsContext.currentContext.CGContext;
@@ -127,9 +136,11 @@ static NSString *TickLabel(double value, double step, double origin) {
             CGContextAddLineToPoint(c, x, r.origin.y + 4);
             CGContextMoveToPoint(c, x, NSMaxY(r));
             CGContextAddLineToPoint(c, x, NSMaxY(r) - 4);
-            NSString *s = TickLabel(v, sx, ox);
-            NSSize size = [s sizeWithAttributes:font];
-            [s drawAtPoint:NSMakePoint(x - size.width / 2, r.origin.y - 15) withAttributes:font];
+            if (self.showsXLabels) {
+                NSString *s = TickLabel(v, sx, ox);
+                NSSize size = [s sizeWithAttributes:font];
+                [s drawAtPoint:NSMakePoint(x - size.width / 2, r.origin.y - 15) withAttributes:font];
+            }
         }
     if (isfinite(sy) && sy > 0)
         for (double v = ceil(b.y / sy) * sy, prev = -INFINITY; v <= b.y + b.height + sy * 1e-8 && v > prev;
@@ -144,9 +155,11 @@ static NSString *TickLabel(double value, double step, double origin) {
             [s drawAtPoint:NSMakePoint(r.origin.x - size.width - 5, y - 6) withAttributes:font];
         }
     CGContextStrokePath(c);
-    NSString *x = ox ? [NSString stringWithFormat:@"%@ (offset %.12g)", self.xName, ox] : self.xName;
-    NSSize xs = [x sizeWithAttributes:font];
-    [x drawAtPoint:NSMakePoint(r.origin.x + (r.size.width - xs.width) / 2, 3) withAttributes:font];
+    if (self.showsXLabels) {
+        NSString *x = ox ? [NSString stringWithFormat:@"%@ (offset %.12g)", self.xName, ox] : self.xName;
+        NSSize xs = [x sizeWithAttributes:font];
+        [x drawAtPoint:NSMakePoint(r.origin.x + (r.size.width - xs.width) / 2, 3) withAttributes:font];
+    }
     CGContextSaveGState(c);
     CGContextTranslateCTM(c, 12, r.origin.y + r.size.height / 2);
     CGContextRotateCTM(c, M_PI_2);
@@ -154,7 +167,7 @@ static NSString *TickLabel(double value, double step, double origin) {
     NSSize ys = [y sizeWithAttributes:font];
     [y drawAtPoint:NSMakePoint(-ys.width / 2, 0) withAttributes:font];
     CGContextRestoreGState(c);
-    if (self.hoverText.length) {
+    if (interaction && self.hoverText.length) {
         NSSize size = [self.hoverText sizeWithAttributes:font];
         NSRect box =
             NSMakeRect(fmax(2, fmin(self.bounds.size.width - size.width - 10, self.hoverPoint.x + 10)),
@@ -166,12 +179,25 @@ static NSString *TickLabel(double value, double step, double origin) {
         NSFrameRect(box);
         [self.hoverText drawAtPoint:NSMakePoint(box.origin.x + 4, box.origin.y + 3) withAttributes:font];
     }
-    if (self.dragging && !self.pan) {
+    if (interaction && self.pan) {
+        [[NSColor colorWithWhite:.2 alpha:.08] setFill];
+        NSRectFillUsingOperation(r, NSCompositingOperationSourceOver);
+        [[NSColor colorWithWhite:.28 alpha:1] setStroke];
+        NSBezierPath *outline = [NSBezierPath bezierPathWithRect:NSInsetRect(r, 1.5, 1.5)];
+        CGFloat dash[] = {4, 3};
+        [outline setLineDash:dash count:2 phase:0];
+        outline.lineWidth = 1;
+        [outline stroke];
+    }
+    if (interaction && self.dragging && !self.pan) {
         NSRect box = NSMakeRect(
             fmin(self.dragStart.x, self.dragCurrent.x), fmin(self.dragStart.y, self.dragCurrent.y),
             fabs(self.dragStart.x - self.dragCurrent.x), fabs(self.dragStart.y - self.dragCurrent.y));
-        [[NSColor.selectedControlColor colorWithAlphaComponent:.15] setFill];
-        NSRectFillUsingOperation(NSIntersectionRect(box, r), NSCompositingOperationSourceOver);
+        [[NSColor colorWithWhite:.25 alpha:.20] setFill];
+        NSRect clipped = NSIntersectionRect(box, r);
+        NSRectFillUsingOperation(clipped, NSCompositingOperationSourceOver);
+        [[NSColor colorWithWhite:.15 alpha:1] setFill];
+        NSFrameRectWithWidth(clipped, 1);
     }
 }
 - (void)drawInMTKView:(MTKView *)view {
@@ -294,6 +320,14 @@ static NSString *TickLabel(double value, double step, double origin) {
         self.navigate(e.buttonNumber == 4);
     else
         [super otherMouseDown:e];
+}
+- (void)resetCursorRects {
+    [self addCursorRect:self.plotRect cursor:self.pan ? NSCursor.openHandCursor : NSCursor.crosshairCursor];
+}
+- (void)setPan:(BOOL)pan {
+    _pan = pan;
+    [self.window invalidateCursorRectsForView:self];
+    [self.annotation setNeedsDisplay:YES];
 }
 - (void)mouseDown:(NSEvent *)e {
     [self.window makeFirstResponder:self];

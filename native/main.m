@@ -1,7 +1,235 @@
 #import "PlotData.h"
+#import "PlotIcons.h"
 #import "PlotView.h"
 #import <Cocoa/Cocoa.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+
+// Native drawing matching the original CSS chrome; no blur or glass layers.
+static BOOL DarkChrome(void) {
+    return [[NSAppearance.currentDrawingAppearance
+        bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]]
+        isEqual:NSAppearanceNameDarkAqua];
+}
+static NSColor *RGB(CGFloat r, CGFloat g, CGFloat b, CGFloat alpha) {
+    return [NSColor colorWithSRGBRed:r / 255 green:g / 255 blue:b / 255 alpha:alpha];
+}
+static void DrawHeader(NSRect r, BOOL separator) {
+    BOOL dark = DarkChrome();
+    NSGradient *gradient = [[NSGradient alloc]
+        initWithColors:dark ? @[ RGB(17, 17, 16, 1), RGB(14, 14, 13, 1), RGB(10, 10, 9, 1) ]
+                            : @[ RGB(251, 251, 249, 1), RGB(249, 249, 247, 1), RGB(244, 244, 242, 1) ]];
+    [gradient drawInRect:r angle:270];
+    [[NSColor.whiteColor colorWithAlphaComponent:dark ? .06 : .9] setFill];
+    NSRectFill(NSMakeRect(r.origin.x, NSMaxY(r) - 1, r.size.width, 1));
+    if (separator) {
+        [(dark ? RGB(13, 13, 12, 1) : [NSColor.blackColor colorWithAlphaComponent:.15]) setFill];
+        NSRectFillUsingOperation(NSMakeRect(r.origin.x, r.origin.y, r.size.width, 1),
+                                 NSCompositingOperationSourceOver);
+    }
+}
+@interface ToolbarSurface : NSView
+@property(nonatomic) BOOL joinsBelow, joinsAbove;
+@property(nonatomic) CGFloat joinX;
+@end
+@implementation ToolbarSurface
+- (NSBezierPath *)outlineInRect:(NSRect)r {
+    CGFloat left = NSMinX(r), right = NSMaxX(r), bottom = NSMinY(r), top = NSMaxY(r);
+    CGFloat bl = 6, br = self.joinsBelow ? 0 : 6, tl = self.joinsAbove ? 0 : 6, tr = self.joinsAbove ? 0 : 6,
+            k = .55228475;
+    NSBezierPath *p = [NSBezierPath bezierPath];
+    [p moveToPoint:NSMakePoint(left + bl, bottom)];
+    [p lineToPoint:NSMakePoint(right - br, bottom)];
+    [p curveToPoint:NSMakePoint(right, bottom + br)
+        controlPoint1:NSMakePoint(right - br + k * br, bottom)
+        controlPoint2:NSMakePoint(right, bottom + br - k * br)];
+    [p lineToPoint:NSMakePoint(right, top - tr)];
+    [p curveToPoint:NSMakePoint(right - tr, top)
+        controlPoint1:NSMakePoint(right, top - tr + k * tr)
+        controlPoint2:NSMakePoint(right - tr + k * tr, top)];
+    [p lineToPoint:NSMakePoint(left + tl, top)];
+    [p curveToPoint:NSMakePoint(left, top - tl)
+        controlPoint1:NSMakePoint(left + tl - k * tl, top)
+        controlPoint2:NSMakePoint(left, top - tl + k * tl)];
+    [p lineToPoint:NSMakePoint(left, bottom + bl)];
+    [p curveToPoint:NSMakePoint(left + bl, bottom)
+        controlPoint1:NSMakePoint(left, bottom + bl - k * bl)
+        controlPoint2:NSMakePoint(left + bl - k * bl, bottom)];
+    [p closePath];
+    return p;
+}
+- (void)drawRect:(NSRect)dirty {
+    BOOL dark = DarkChrome();
+    NSBezierPath *fill = [self outlineInRect:self.bounds];
+    [(dark ? RGB(18, 18, 17, .88) : RGB(235, 235, 233, .88)) setFill];
+    [fill fill];
+    NSRect r = NSInsetRect(self.bounds, .5, .5);
+    NSBezierPath *border = [self outlineInRect:r];
+    if (self.joinsAbove) {
+        // The top belongs to the toolbar; only the two sides and bottom have an edge.
+        border = [NSBezierPath bezierPath];
+        [border moveToPoint:NSMakePoint(NSMinX(r), NSMaxY(self.bounds))];
+        [border lineToPoint:NSMakePoint(NSMinX(r), NSMinY(r) + 6)];
+        [border appendBezierPathWithArcFromPoint:NSMakePoint(NSMinX(r), NSMinY(r))
+                                         toPoint:NSMakePoint(NSMinX(r) + 6, NSMinY(r))
+                                          radius:6];
+        [border lineToPoint:NSMakePoint(NSMaxX(r) - 6, NSMinY(r))];
+        [border appendBezierPathWithArcFromPoint:NSMakePoint(NSMaxX(r), NSMinY(r))
+                                         toPoint:NSMakePoint(NSMaxX(r), NSMinY(r) + 6)
+                                          radius:6];
+        [border lineToPoint:NSMakePoint(NSMaxX(r), NSMaxY(self.bounds))];
+    } else if (self.joinsBelow) {
+        border = [NSBezierPath bezierPath];
+        [border moveToPoint:NSMakePoint(self.joinX + .5, NSMinY(r))];
+        [border lineToPoint:NSMakePoint(NSMinX(r) + 6, NSMinY(r))];
+        [border appendBezierPathWithArcFromPoint:NSMakePoint(NSMinX(r), NSMinY(r))
+                                         toPoint:NSMakePoint(NSMinX(r), NSMinY(r) + 6)
+                                          radius:6];
+        [border lineToPoint:NSMakePoint(NSMinX(r), NSMaxY(r) - 6)];
+        [border appendBezierPathWithArcFromPoint:NSMakePoint(NSMinX(r), NSMaxY(r))
+                                         toPoint:NSMakePoint(NSMinX(r) + 6, NSMaxY(r))
+                                          radius:6];
+        [border lineToPoint:NSMakePoint(NSMaxX(r) - 6, NSMaxY(r))];
+        [border appendBezierPathWithArcFromPoint:NSMakePoint(NSMaxX(r), NSMaxY(r))
+                                         toPoint:NSMakePoint(NSMaxX(r), NSMaxY(r) - 6)
+                                          radius:6];
+        [border lineToPoint:NSMakePoint(NSMaxX(r), NSMinY(self.bounds))];
+    }
+    [[NSColor.whiteColor colorWithAlphaComponent:dark ? .10 : .62] setStroke];
+    border.lineWidth = 1;
+    [border stroke];
+    if (!self.joinsAbove) {
+        [NSGraphicsContext saveGraphicsState];
+        [fill addClip];
+        [[NSColor.whiteColor colorWithAlphaComponent:dark ? .06 : .9] setFill];
+        NSRectFillUsingOperation(NSMakeRect(0, self.bounds.size.height - 1.5, self.bounds.size.width, 1),
+                                 NSCompositingOperationSourceOver);
+        [NSGraphicsContext restoreGraphicsState];
+    }
+}
+@end
+@interface IconButton : NSButton
+@property(nonatomic) BOOL hovered;
+@property(nonatomic) NSTrackingArea *hoverTracking;
+@property(nonatomic) CGFloat iconSize;
+@property(nonatomic) BOOL headerButton;
+@property(nonatomic) NSImage *selectedImage;
+@end
+@implementation IconButton
+- (void)drawRect:(NSRect)dirty {
+    BOOL pressed = self.cell.isHighlighted, selected = self.state == NSControlStateValueOn;
+    BOOL dark = DarkChrome();
+    if (self.enabled && (pressed || self.hovered || (selected && !self.headerButton))) {
+        CGFloat alpha = self.headerButton ? (dark ? .075 : .055)
+                        : pressed         ? .24
+                        : selected        ? (dark ? .22 : .15)
+                                          : (dark ? .16 : .12);
+        [[(dark ? NSColor.whiteColor : NSColor.blackColor) colorWithAlphaComponent:alpha] setFill];
+        CGFloat radius = self.headerButton ? self.bounds.size.height / 2 : 6;
+        [[NSBezierPath bezierPathWithRoundedRect:self.bounds xRadius:radius yRadius:radius] fill];
+    }
+    CGFloat size = self.iconSize ?: 16;
+    NSRect r = NSMakeRect(NSMidX(self.bounds) - size / 2, NSMidY(self.bounds) - size / 2, size, size);
+    CGContextRef c = NSGraphicsContext.currentContext.CGContext;
+    CGContextBeginTransparencyLayer(c, NULL);
+    [(selected && self.selectedImage ? self.selectedImage : self.image)
+            drawInRect:r
+              fromRect:NSZeroRect
+             operation:NSCompositingOperationSourceOver
+              fraction:1
+        respectFlipped:YES
+                 hints:nil];
+    [(self.enabled ? NSColor.labelColor : NSColor.disabledControlTextColor) setFill];
+    NSRectFillUsingOperation(r, NSCompositingOperationSourceIn);
+    CGContextEndTransparencyLayer(c);
+}
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    if (self.hoverTracking)
+        [self removeTrackingArea:self.hoverTracking];
+    self.hoverTracking = [[NSTrackingArea alloc]
+        initWithRect:NSZeroRect
+             options:NSTrackingMouseEnteredAndExited | NSTrackingActiveInActiveApp | NSTrackingInVisibleRect
+               owner:self
+            userInfo:nil];
+    [self addTrackingArea:self.hoverTracking];
+}
+- (void)mouseEntered:(NSEvent *)event {
+    self.hovered = YES;
+    self.needsDisplay = YES;
+}
+- (void)mouseExited:(NSEvent *)event {
+    self.hovered = NO;
+    self.needsDisplay = YES;
+}
+@end
+static NSButton *Icon(NSString *symbol, NSString *help, id target, SEL action, NSRect frame) {
+    IconButton *b = [[IconButton alloc] initWithFrame:frame];
+    b.image = PlotIcon(symbol, NO);
+    b.headerButton = [@[ @"close", @"minimize", @"pin" ] containsObject:symbol];
+    if ([symbol isEqual:@"pin"])
+        b.selectedImage = PlotIcon(symbol, YES);
+    b.iconSize = [@[ @"close", @"minimize", @"pin" ] containsObject:symbol] ? 13 : 16;
+    b.imagePosition = NSImageOnly;
+    b.target = target;
+    b.action = action;
+    b.bordered = NO;
+    b.toolTip = help;
+    b.accessibilityLabel = help;
+    b.refusesFirstResponder = YES;
+    b.focusRingType = NSFocusRingTypeNone;
+    return b;
+}
+@interface PanelChrome : NSView
+@end
+@implementation PanelChrome
+- (void)drawRect:(NSRect)dirty {
+    [NSColor.controlBackgroundColor setFill];
+    NSRectFill(self.bounds);
+    DrawHeader(NSMakeRect(0, self.bounds.size.height - 28, self.bounds.size.width, 28), YES);
+    [NSColor.separatorColor setFill];
+    NSFrameRect(self.bounds);
+}
+@end
+@interface SquarePanel : NSPanel
+@end
+@implementation SquarePanel
+- (BOOL)canBecomeKeyWindow {
+    return YES;
+}
+- (void)sendEvent:(NSEvent *)event {
+    if (event.type == NSEventTypeLeftMouseDown && event.locationInWindow.y > self.frame.size.height - 28 &&
+        event.locationInWindow.x > 30) {
+        [self makeKeyAndOrderFront:nil];
+        [self performWindowDragWithEvent:event];
+        return;
+    }
+    [super sendEvent:event];
+}
+@end
+static NSPanel *MakePanel(NSString *title, NSSize size) {
+    NSPanel *panel = [[SquarePanel alloc] initWithContentRect:NSMakeRect(0, 0, size.width, size.height + 28)
+                                                    styleMask:NSWindowStyleMaskBorderless
+                                                      backing:NSBackingStoreBuffered
+                                                        defer:NO];
+    panel.title = title;
+    panel.releasedWhenClosed = NO;
+    panel.opaque = YES;
+    panel.hasShadow = NO;
+    panel.backgroundColor = NSColor.controlBackgroundColor;
+    panel.contentView = [[PanelChrome alloc] initWithFrame:panel.contentView.bounds];
+    NSButton *close =
+        Icon(@"close", @"Close Window", panel, @selector(close), NSMakeRect(7, size.height + 5, 18, 18));
+    close.autoresizingMask = NSViewMinYMargin;
+    [panel.contentView addSubview:close];
+    NSTextField *label = [NSTextField labelWithString:title];
+    label.font = [NSFont systemFontOfSize:12];
+    label.alignment = NSTextAlignmentCenter;
+    label.textColor = NSColor.secondaryLabelColor;
+    label.frame = NSMakeRect(34, size.height + 6, size.width - 68, 16);
+    label.autoresizingMask = NSViewMinYMargin | NSViewWidthSizable;
+    [panel.contentView addSubview:label];
+    return panel;
+}
 
 @class PlotApp, PlotController;
 static NSTextField *Label(NSString *text, NSRect frame) {
@@ -11,17 +239,6 @@ static NSTextField *Label(NSString *text, NSRect frame) {
     v.lineBreakMode = NSLineBreakByTruncatingMiddle;
     v.toolTip = text;
     return v;
-}
-static NSButton *Button(NSString *title, NSString *help, id target, SEL action, NSRect frame) {
-    NSButton *b = [NSButton buttonWithTitle:title target:target action:action];
-    b.frame = frame;
-    b.bezelStyle = NSBezelStyleRounded;
-    b.font = [NSFont systemFontOfSize:11];
-    b.toolTip = help;
-    b.accessibilityLabel = help;
-    b.refusesFirstResponder = YES;
-    b.focusRingType = NSFocusRingTypeNone;
-    return b;
 }
 static NSTextField *Input(NSString *text, NSRect frame) {
     NSTextField *v = [[NSTextField alloc] initWithFrame:frame];
@@ -43,23 +260,6 @@ static void Alert(NSString *title, NSString *message) {
     a.informativeText = message ?: @"";
     [a runModal];
 }
-static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *hi) {
-    if (!min.stringValue.length && !max.stringValue.length)
-        return NO;
-    NSScanner *a = [NSScanner scannerWithString:min.stringValue],
-              *b = [NSScanner scannerWithString:max.stringValue];
-    double x, y;
-    if (![a scanDouble:&x] || !a.isAtEnd || ![b scanDouble:&y] || !b.isAtEnd || !isfinite(x) ||
-        !isfinite(y) || !isfinite(y - x) || x >= y)
-        @throw [NSException
-            exceptionWithName:@"PlotInput"
-                       reason:@"Enter two finite limits with minimum < maximum, or leave both empty."
-                     userInfo:nil];
-    *lo = x;
-    *hi = y;
-    return YES;
-}
-
 @interface PlotWindow : NSWindow
 @end
 @implementation PlotWindow
@@ -111,9 +311,14 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
 @interface PlotApp : NSObject <NSApplicationDelegate, NSWindowDelegate>
 @property(nonatomic) Renderer *renderer;
 @property(nonatomic) NSMutableArray<PlotController *> *controllers;
-@property(nonatomic) ToolbarPanel *toolbar;
+@property(nonatomic) ToolbarPanel *toolbar, *yStack;
 @property(nonatomic, weak) PlotController *target;
 @property(nonatomic) NSPopUpButton *xSelect, *ySelect;
+@property(nonatomic) NSMutableArray<NSPopUpButton *> *ySelects;
+@property(nonatomic) NSMutableArray<NSButton *> *yRemoves;
+@property(nonatomic) NSMutableArray<NSTextField *> *yLabels;
+@property(nonatomic) NSButton *yAdd;
+@property(nonatomic) CGFloat yColumnX;
 @property(nonatomic) NSMutableDictionary<NSString *, NSButton *> *tools;
 @property(nonatomic) NSWindowController *settings;
 @property(nonatomic) dispatch_queue_t loader;
@@ -122,6 +327,7 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
 - (void)syncFocus;
 - (void)updateToolbar;
 - (void)placeToolbar;
+- (void)syncYStack;
 - (PlotController *)newPlot:(PLGroup *)group;
 - (void)openPaths:(NSArray<NSString *> *)paths reply:(BOOL)reply;
 - (void)action:(id)sender;
@@ -131,7 +337,7 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
 @property(nonatomic, weak) PlotApp *app;
 @property(nonatomic) PlotWindow *window;
 @property(nonatomic) PlotRoot *root;
-@property(nonatomic) NSTextField *title;
+@property(nonatomic) NSTextField *title, *positionLabel;
 @property(nonatomic) NSButton *pin;
 @property(nonatomic) PLGroup *group;
 @property(nonatomic) NSMutableArray<PLChart *> *charts;
@@ -142,11 +348,8 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
 @property(nonatomic) BOOL points, pan, outliers;
 @property(nonatomic) NSMutableArray<NSArray<NSValue *> *> *history;
 @property(nonatomic) NSInteger historyIndex;
-@property(nonatomic) NSPanel *filterPanel, *axesPanel;
-@property(nonatomic) NSMutableArray<NSDictionary *> *filterFields, *axisFields;
-@property(nonatomic) NSPopUpButton *axesX;
-@property(nonatomic) NSTextField *axesXMin, *axesXMax;
-@property(nonatomic) NSView *axesDocument;
+@property(nonatomic) NSPanel *filterPanel;
+@property(nonatomic) NSMutableArray<NSDictionary *> *filterFields;
 - (instancetype)initWithApp:(PlotApp *)app group:(PLGroup *)group;
 - (void)layout;
 - (void)updateHeader;
@@ -157,6 +360,9 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
 - (NSArray<NSValue *> *)ranges;
 - (void)applyRanges:(NSArray<NSValue *> *)ranges;
 - (void)record;
+- (void)addY;
+- (void)removeY:(NSUInteger)index;
+- (void)setYColumns:(NSArray<NSString *> *)columns keeping:(NSArray<NSNumber *> *)indexes;
 @end
 @implementation PlotRoot
 - (BOOL)isOpaque {
@@ -165,10 +371,8 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
 - (void)drawRect:(NSRect)dirty {
     [NSColor.whiteColor setFill];
     NSRectFill(self.bounds);
-    [NSColor.windowBackgroundColor setFill];
-    NSRectFill(NSMakeRect(0, self.bounds.size.height - 28, self.bounds.size.width, 28));
-    [[NSColor.separatorColor colorWithAlphaComponent:.5] setFill];
-    NSRectFill(NSMakeRect(0, self.bounds.size.height - 29, self.bounds.size.width, 1));
+    DrawHeader(NSMakeRect(0, self.bounds.size.height - 28, self.bounds.size.width, 28), NO);
+
     [NSColor.grayColor setStroke];
     NSBezierPath *grip = [NSBezierPath bezierPath];
     [grip moveToPoint:NSMakePoint(self.bounds.size.width - 8, 2)];
@@ -209,16 +413,24 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
     self.root = [[PlotRoot alloc] initWithFrame:self.window.contentView.bounds];
     self.root.controller = self;
     self.window.contentView = self.root;
-    [self.root addSubview:Button(@"×", @"Close Window (⌘W)", self, @selector(close:), NSZeroRect)];
-    [self.root addSubview:Button(@"−", @"Minimize (⌘M)", self, @selector(minimize:), NSZeroRect)];
-    self.pin = Button(@"↑", @"Always on Top (⌥⌘T)", self, @selector(togglePin:), NSZeroRect);
+    [self.root addSubview:Icon(@"close", @"Close Window (⌘W)", self, @selector(close:), NSZeroRect)];
+    [self.root addSubview:Icon(@"minimize", @"Minimize (⌘M)", self, @selector(minimize:), NSZeroRect)];
+    self.pin = Icon(@"pin", @"Always on Top (⌥⌘T)", self, @selector(togglePin:), NSZeroRect);
     self.pin.buttonType = NSButtonTypeToggle;
     [self.root addSubview:self.pin];
     self.title = Label(@"Plot", NSZeroRect);
+    self.title.font = [NSFont systemFontOfSize:12];
+    self.title.lineBreakMode = NSLineBreakByTruncatingTail;
     [self.root addSubview:self.title];
+    self.positionLabel = Label(@"", NSZeroRect);
+    self.positionLabel.font = [NSFont monospacedDigitSystemFontOfSize:10 weight:NSFontWeightRegular];
+    self.positionLabel.lineBreakMode = NSLineBreakByClipping;
+    self.positionLabel.cell.usesSingleLineMode = YES;
+    self.positionLabel.textColor = NSColor.secondaryLabelColor;
+    [self.root addSubview:self.positionLabel];
     if (!group) {
         NSButton *open =
-            Button(@"Open Data…", @"Open files (⌘O)", app, @selector(action:), NSMakeRect(135, 120, 150, 30));
+            Icon(@"open", @"Open files (⌘O)", app, @selector(action:), NSMakeRect(194, 139, 32, 32));
         open.identifier = @"open";
         open.autoresizingMask = NSViewMinXMargin | NSViewMaxXMargin | NSViewMinYMargin | NSViewMaxYMargin;
         [self.root addSubview:open];
@@ -231,11 +443,29 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
 - (void)layout {
     CGFloat w = self.root.bounds.size.width, h = self.root.bounds.size.height;
     for (NSUInteger i = 0; i < 3; i++)
-        self.root.subviews[i].frame = NSMakeRect(4 + i * 24, h - 25, 22, 22);
-    self.title.frame = NSMakeRect(82, h - 22, MAX(1, w - 90), 18);
-    CGFloat height = (h - 30) / MAX(1ul, self.charts.count);
-    for (NSUInteger i = 0; i < self.charts.count; i++)
-        self.charts[i].frame = NSMakeRect(0, h - 29 - (i + 1) * height, w, height);
+        self.root.subviews[i].frame = NSMakeRect(7 + i * 25, h - 23, 18, 18);
+    CGFloat right = w - 7;
+    self.positionLabel.hidden = self.group.items.count < 2;
+    if (!self.positionLabel.hidden) {
+        // NSTextField's cell includes horizontal padding absent from string measurement.
+        NSSize fitting = self.positionLabel.cell.cellSize;
+        CGFloat width = ceil(fitting.width) + 2;
+        CGFloat height = MAX(14, ceil(fitting.height));
+        self.positionLabel.frame = NSMakeRect(right - width, h - 14 - height / 2, width, height);
+        right -= width + 8;
+    }
+    self.title.frame = NSMakeRect(83, h - 22, MAX(1, right - 83), 16);
+    NSUInteger count = self.charts.count;
+    CGFloat plotHeight = MAX(1, (h - 30 - count * 26 - 26) / MAX(1ul, count));
+    CGFloat top = h - 29;
+    for (NSUInteger i = 0; i < count; i++) {
+        BOOL last = i + 1 == count;
+        self.charts[i].showsXLabels = last;
+        CGFloat height = plotHeight + (last ? 52 : 26);
+        self.charts[i].frame = NSMakeRect(0, top - height, w, height);
+        self.charts[i].needsLayout = YES;
+        top -= height;
+    }
 }
 - (void)close:(id)sender {
     [self.window close];
@@ -248,7 +478,12 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         self.window.level == NSFloatingWindowLevel ? NSNormalWindowLevel : NSFloatingWindowLevel;
     self.pin.state =
         self.window.level == NSFloatingWindowLevel ? NSControlStateValueOn : NSControlStateValueOff;
-    [self.app placeToolbar];
+    BOOL pinned = self.window.level == NSFloatingWindowLevel;
+    self.pin.toolTip = pinned ? @"Disable Always on Top (⌥⌘T)" : @"Always on Top (⌥⌘T)";
+    self.pin.accessibilityLabel = self.pin.toolTip;
+    self.pin.needsDisplay = YES;
+    if (self.app.target == self)
+        [self.app placeToolbar];
 }
 - (NSString *)displayName:(NSUInteger)index {
     PLDataset *d = self.group.items[index];
@@ -262,14 +497,18 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
 }
 - (void)updateHeader {
     NSString *text = self.group ? [self displayName:self.selected] : @"Plot";
-    if (self.group.items.count > 1)
-        text = [text stringByAppendingFormat:@"  %lu/%lu", self.selected + 1, self.group.items.count];
+    self.positionLabel.stringValue =
+        self.group.items.count > 1
+            ? [NSString stringWithFormat:@"%lu / %lu", self.selected + 1, self.group.items.count]
+            : @"";
     self.title.stringValue = text;
     self.title.toolTip = self.group.items.count ? self.group.items[self.selected].path : nil;
     self.window.title = text;
     self.title.textColor = NSApp.isActive && (NSApp.keyWindow == self.window || self.app.target == self)
                                ? NSColor.labelColor
                                : NSColor.secondaryLabelColor;
+    [self layout];
+    [self.root setNeedsDisplay:YES];
     [self.app updateToolbar];
 }
 - (void)choose:(NSInteger)delta {
@@ -427,15 +666,8 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
     [self record];
 }
 - (NSPanel *)panel:(NSString *)title size:(NSSize)size {
-    NSPanel *panel = [[NSPanel alloc]
-        initWithContentRect:NSMakeRect(0, 0, size.width, size.height)
-                  styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
-                    backing:NSBackingStoreBuffered
-                      defer:NO];
-    panel.title = title;
-    panel.releasedWhenClosed = NO;
+    NSPanel *panel = MakePanel(title, size);
     panel.delegate = self;
-    panel.minSize = size;
     [panel setFrameTopLeftPoint:NSMakePoint(NSMaxX(self.window.frame) + 8, NSMaxY(self.window.frame))];
     return panel;
 }
@@ -473,12 +705,10 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         [doc addSubview:hi];
         [self.filterFields addObject:@{@"column" : column, @"min" : lo, @"max" : hi}];
     }
-    [v addSubview:Button(@"Apply", @"Apply Filter", self, @selector(applyFilter:),
-                         NSMakeRect(8, 10, 90, 28))];
-    [v addSubview:Button(@"Reset", @"Reset Filter", self, @selector(resetFilter:),
-                         NSMakeRect(105, 10, 90, 28))];
-    [v addSubview:Button(@"Save CSV…", @"Save Filtered CSV", self, @selector(saveCSV:),
-                         NSMakeRect(265, 10, 125, 28))];
+    [v addSubview:Icon(@"apply", @"Apply Filter", self, @selector(applyFilter:), NSMakeRect(8, 10, 28, 28))];
+    [v addSubview:Icon(@"home", @"Reset Filter", self, @selector(resetFilter:), NSMakeRect(44, 10, 28, 28))];
+    [v addSubview:Icon(@"save-image", @"Save Filtered CSV", self, @selector(saveCSV:),
+                       NSMakeRect(362, 10, 28, 28))];
     [self.window addChildWindow:self.filterPanel ordered:NSWindowAbove];
     [self.filterPanel makeKeyAndOrderFront:nil];
 }
@@ -537,139 +767,68 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
                           Alert(@"Export failed", error.localizedDescription);
                   }];
 }
-- (void)addAxisField:(NSString *)column range:(NSValue *)range {
-    NSPopUpButton *select = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [select addItemsWithTitles:self.group.columns];
-    [select selectItemWithTitle:column];
-    NSTextField *lo = Input(@"", NSZeroRect), *hi = Input(@"", NSZeroRect);
-    lo.placeholderString = @"auto min";
-    hi.placeholderString = @"auto max";
-    lo.accessibilityLabel = @"Y minimum";
-    hi.accessibilityLabel = @"Y maximum";
-    if (range) {
-        Bounds b = Unbox(range);
-        lo.stringValue = [NSString stringWithFormat:@"%.17g", b.y];
-        hi.stringValue = [NSString stringWithFormat:@"%.17g", b.y + b.height];
-    }
-    NSButton *remove = Button(@"−", @"Remove Y Axis", self, @selector(removeAxis:), NSZeroRect);
-    NSDictionary *field = @{@"select" : select, @"min" : lo, @"max" : hi, @"remove" : remove};
-    [self.axisFields addObject:field];
-    for (NSView *control in field.allValues)
-        [self.axesDocument addSubview:control];
-    [self layoutAxes];
-}
-- (void)layoutAxes {
-    self.axesDocument.frame = NSMakeRect(0, 0, 500, MAX(170, self.axisFields.count * 34));
-    for (NSUInteger i = 0; i < self.axisFields.count; i++) {
-        NSDictionary *f = self.axisFields[i];
-        CGFloat y = self.axesDocument.frame.size.height - (i + 1) * 34;
-        [f[@"select"] setFrame:NSMakeRect(4, y, 240, 28)];
-        [f[@"min"] setFrame:NSMakeRect(250, y + 2, 100, 24)];
-        [f[@"max"] setFrame:NSMakeRect(355, y + 2, 100, 24)];
-        [f[@"remove"] setFrame:NSMakeRect(462, y, 32, 28)];
-        [f[@"remove"] setEnabled:self.axisFields.count > 1];
-    }
-}
-- (void)addAxis:(id)sender {
-    NSString *column = self.group.columns[MIN(1ul, self.group.columns.count - 1)];
-    for (NSString *c in self.group.columns) {
-        BOOL used = NO;
-        for (NSDictionary *field in self.axisFields)
-            used |= [[field[@"select"] titleOfSelectedItem] isEqual:c];
-        if (!used && ![c isEqual:self.x]) {
-            column = c;
-            break;
-        }
-    }
-    [self addAxisField:column range:nil];
-}
-- (void)removeAxis:(id)sender {
-    if (self.axisFields.count <= 1)
+- (void)setYColumns:(NSArray<NSString *> *)columns keeping:(NSArray<NSNumber *> *)indexes {
+    if (!columns.count || !self.group)
         return;
-    for (NSDictionary *field in [self.axisFields copy])
-        if (field[@"remove"] == sender) {
-            for (NSView *v in field.allValues)
-                [v removeFromSuperview];
-            [self.axisFields removeObject:field];
-            break;
-        }
-    [self layoutAxes];
+    NSArray *before = [self ranges];
+    Bounds shared = before.count ? Unbox(before[0]) : (Bounds){0, 0, 1, 1};
+    self.ys = columns;
+    [self rebuild];
+    for (NSUInteger i = 0; i < self.charts.count; i++) {
+        NSInteger oldIndex = indexes[i].integerValue;
+        Bounds b = oldIndex >= 0 && oldIndex < (NSInteger)before.count ? Unbox(before[oldIndex])
+                                                                       : self.charts[i].range;
+        b.x = shared.x;
+        b.width = shared.width;
+        self.charts[i].range = b;
+        [self.charts[i] refresh];
+    }
+    [self.history removeAllObjects];
+    self.historyIndex = -1;
+    [self record];
 }
-- (void)showAxes {
-    if (self.axesPanel) {
-        [self.axesPanel makeKeyAndOrderFront:nil];
+- (void)addY {
+    if (!self.group)
         return;
-    }
-    self.axesPanel = [self panel:@"Axes" size:NSMakeSize(530, 300)];
-    NSView *v = self.axesPanel.contentView;
-    self.axisFields = [NSMutableArray new];
-    NSTextField *xLabel = Label(@"X", NSMakeRect(8, 260, 22, 22));
-    xLabel.autoresizingMask = NSViewMinYMargin;
-    [v addSubview:xLabel];
-    self.axesX = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(30, 256, 230, 28)];
-    self.axesX.autoresizingMask = NSViewMinYMargin;
-    [self.axesX addItemsWithTitles:self.group.columns];
-    [self.axesX selectItemWithTitle:self.x];
-    [v addSubview:self.axesX];
-    Bounds b = self.charts.firstObject.range;
-    self.axesXMin = Input([NSString stringWithFormat:@"%.17g", b.x], NSMakeRect(265, 258, 115, 24));
-    self.axesXMax = Input([NSString stringWithFormat:@"%.17g", b.x + b.width], NSMakeRect(385, 258, 130, 24));
-    self.axesXMin.autoresizingMask = self.axesXMax.autoresizingMask = NSViewMinYMargin;
-    self.axesXMin.accessibilityLabel = @"X minimum";
-    self.axesXMax.accessibilityLabel = @"X maximum";
-    [v addSubview:self.axesXMin];
-    [v addSubview:self.axesXMax];
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(8, 55, 514, 195)];
-    scroll.hasVerticalScroller = YES;
-    scroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    self.axesDocument = [NSView new];
-    scroll.documentView = self.axesDocument;
-    [v addSubview:scroll];
-    NSArray *ranges = [self ranges];
-    for (NSUInteger i = 0; i < self.ys.count; i++)
-        [self addAxisField:self.ys[i] range:ranges[i]];
-    [v addSubview:Button(@"Add Y", @"Add Y Axis", self, @selector(addAxis:), NSMakeRect(8, 12, 90, 28))];
-    NSButton *apply =
-        Button(@"Apply", @"Apply Axes", self, @selector(applyAxes:), NSMakeRect(418, 12, 100, 28));
-    apply.keyEquivalent = @"\r";
-    apply.keyEquivalentModifierMask = NSEventModifierFlagCommand;
-    [v addSubview:apply];
-    [self.window addChildWindow:self.axesPanel ordered:NSWindowAbove];
-    [self.axesPanel makeKeyAndOrderFront:nil];
+    NSString *column = self.ys.lastObject ?: self.group.y;
+    for (NSString *candidate in self.group.columns)
+        if (![self.ys containsObject:candidate] && ![candidate isEqual:self.x]) {
+            BOOL numeric = NO;
+            for (PLDataset *dataset in self.group.items) {
+                NSUInteger yi = [dataset.columns indexOfObject:candidate];
+                NSUInteger xi = [dataset.columns indexOfObject:self.x];
+                if (yi == NSNotFound || xi == NSNotFound)
+                    continue;
+                for (NSUInteger row = 0; row < dataset.rowCount; row++)
+                    if (isfinite([dataset valueAtRow:row column:yi]) && isfinite([dataset valueAtRow:row
+                                                                                              column:xi])) {
+                        numeric = YES;
+                        break;
+                    }
+                if (numeric)
+                    break;
+            }
+            if (numeric) {
+                column = candidate;
+                break;
+            }
+        }
+    NSMutableArray *columns = [self.ys mutableCopy], *indexes = [NSMutableArray new];
+    for (NSUInteger i = 0; i < columns.count; i++)
+        [indexes addObject:@(i)];
+    [columns addObject:column];
+    [indexes addObject:@(-1)];
+    [self setYColumns:columns keeping:indexes];
 }
-- (void)applyAxes:(id)sender {
-    @try {
-        double x0 = 0, x1 = 0;
-        BOOL hasX = ReadLimits(self.axesXMin, self.axesXMax, &x0, &x1);
-        NSMutableArray *ys = [NSMutableArray new], *limits = [NSMutableArray new];
-        for (NSDictionary *field in self.axisFields) {
-            [ys addObject:[field[@"select"] titleOfSelectedItem]];
-            double lo = 0, hi = 0;
-            BOOL has = ReadLimits(field[@"min"], field[@"max"], &lo, &hi);
-            [limits addObject:has ? @[ @(lo), @(hi) ] : NSNull.null];
-        }
-        self.x = self.axesX.titleOfSelectedItem;
-        self.ys = ys;
-        [self rebuild];
-        for (NSUInteger i = 0; i < self.charts.count; i++) {
-            Bounds b = self.charts[i].range;
-            if (hasX) {
-                b.x = x0;
-                b.width = x1 - x0;
-            }
-            if (limits[i] != NSNull.null) {
-                b.y = [limits[i][0] doubleValue];
-                b.height = [limits[i][1] doubleValue] - b.y;
-            }
-            self.charts[i].range = b;
-            [self.charts[i] refresh];
-        }
-        [self.history removeAllObjects];
-        self.historyIndex = -1;
-        [self record];
-    } @catch (NSException *e) {
-        Alert(@"Invalid axes", e.reason);
-    }
+- (void)removeY:(NSUInteger)index {
+    if (self.ys.count <= 1 || index >= self.ys.count)
+        return;
+    NSMutableArray *columns = [self.ys mutableCopy], *indexes = [NSMutableArray new];
+    for (NSUInteger i = 0; i < columns.count; i++)
+        if (i != index)
+            [indexes addObject:@(i)];
+    [columns removeObjectAtIndex:index];
+    [self setYColumns:columns keeping:indexes];
 }
 - (NSData *)renderPanelPNG {
     CGFloat scale = self.window.backingScaleFactor;
@@ -694,13 +853,21 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
     // cacheDisplay.
     for (NSUInteger i = 0; i < 3; i++) {
         NSButton *button = (NSButton *)self.root.subviews[i];
-        [button.cell drawWithFrame:button.frame inView:self.root];
+        CGContextRef context = NSGraphicsContext.currentContext.CGContext;
+        CGContextSaveGState(context);
+        CGContextTranslateCTM(context, button.frame.origin.x, button.frame.origin.y);
+        [button drawRect:button.bounds];
+        CGContextRestoreGState(context);
     }
-    [self.title.stringValue drawAtPoint:NSMakePoint(82, size.height - 22)
-                         withAttributes:@{
-                             NSFontAttributeName : [NSFont systemFontOfSize:11],
-                             NSForegroundColorAttributeName : NSColor.labelColor
-                         }];
+    for (NSTextField *label in @[ self.title, self.positionLabel ]) {
+        if (label.hidden)
+            continue;
+        [label.stringValue drawInRect:label.frame
+                       withAttributes:@{
+                           NSFontAttributeName : label.font,
+                           NSForegroundColorAttributeName : label.textColor
+                       }];
+    }
     for (PLChart *chart in self.charts) {
         NSImage *image = [chart plotImageAtScale:scale];
         if (!image) {
@@ -711,7 +878,7 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         CGContextSaveGState(c);
         CGContextTranslateCTM(c, chart.frame.origin.x, chart.frame.origin.y);
         [image drawInRect:chart.plotRect];
-        [chart drawAnnotations];
+        [chart drawAnnotationsForExport];
         CGContextRestoreGState(c);
     }
     [NSGraphicsContext restoreGraphicsState];
@@ -772,9 +939,7 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         NSError *error;
         if (![task launchAndReturnError:&error])
             Alert(@"Cannot open editor", error.localizedDescription);
-    } else if ([action isEqual:@"axes"])
-        [self showAxes];
-    else if ([action isEqual:@"filter"])
+    } else if ([action isEqual:@"filter"])
         [self showFilter];
     else if ([action isEqual:@"save-image"])
         [self saveImage];
@@ -871,6 +1036,7 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         [self.window removeChildWindow:self.app.toolbar];
         [self.app.toolbar orderOut:nil];
         self.app.target = nil;
+        [self.app syncYStack];
     }
 }
 - (void)windowWillClose:(NSNotification *)n {
@@ -887,28 +1053,15 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         [self rebuild];
         return;
     }
-    if (n.object == self.axesPanel) {
-        [self.window removeChildWindow:self.axesPanel];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if ([self.app.controllers containsObject:self] && self.window.visible &&
-                !self.window.miniaturized && !NSApp.keyWindow)
-                [self.window makeKeyAndOrderFront:nil];
-        });
-        self.axesPanel = nil;
-        self.axisFields = nil;
-        self.axesDocument = nil;
-        return;
-    }
     if (n.object != self.window)
         return;
     self.filterPanel.delegate = nil;
     [self.filterPanel close];
-    self.axesPanel.delegate = nil;
-    [self.axesPanel close];
     if (self.app.target == self) {
         [self.window removeChildWindow:self.app.toolbar];
         self.app.target = nil;
         [self.app.toolbar orderOut:nil];
+        [self.app syncYStack];
     }
     for (PLChart *c in self.charts)
         [c removeFromSuperview];
@@ -932,8 +1085,16 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
     NSApp.appearance = [theme isEqual:@"dark"]    ? [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]
                        : [theme isEqual:@"light"] ? [NSAppearance appearanceNamed:NSAppearanceNameAqua]
                                                   : nil;
-    for (PlotController *c in self.controllers)
+    for (PlotController *c in self.controllers) {
+        [c layout];
         [c.root setNeedsDisplay:YES];
+        for (NSView *view in c.root.subviews)
+            view.needsDisplay = YES;
+        c.filterPanel.contentView.needsDisplay = YES;
+    }
+    self.toolbar.contentView.needsDisplay = YES;
+    self.yStack.contentView.needsDisplay = YES;
+    self.settings.window.contentView.needsDisplay = YES;
 }
 - (NSMenuItem *)menu:(NSMenu *)menu
                title:(NSString *)title
@@ -970,7 +1131,6 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         ],
         @[
             @"Tools", @[ @"Filter…", @"filter", @"f", @(alt) ],
-            @[ @"Axes…", @"axes", @"g", @(alt | NSEventModifierFlagShift) ],
             @[ @"Exclude Outliers", @"outliers", @"r", @(alt | NSEventModifierFlagShift) ],
             @[ @"Next X Column", @"next-x", @"x", @(cmd) ],
             @[ @"Previous X Column", @"previous-x", @"x", @(shift) ],
@@ -1016,8 +1176,9 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
                                                        defer:NO];
     self.toolbar.delegate = self;
     self.toolbar.title = @"Plot Controls";
-    self.toolbar.opaque = YES;
-    self.toolbar.backgroundColor = NSColor.windowBackgroundColor;
+    self.toolbar.opaque = NO;
+    self.toolbar.backgroundColor = NSColor.clearColor;
+    self.toolbar.contentView = [[ToolbarSurface alloc] initWithFrame:self.toolbar.contentView.bounds];
     self.toolbar.hasShadow = NO;
     self.toolbar.releasedWhenClosed = NO;
     self.toolbar.becomesKeyOnlyIfNeeded = YES;
@@ -1025,41 +1186,55 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         @[ @"Open", @"open", @"Open files (⌘O)" ], @[ @"⌂", @"home", @"Fit all data" ],
         @[ @"‹", @"undo-view", @"Previous view" ], @[ @"›", @"redo-view", @"Next view" ],
         @[ @"Pan", @"pan", @"Pan" ], @[ @"Zoom", @"zoom", @"Box zoom" ], @[ @"Line", @"line", @"Lines" ],
-        @[ @"Dots", @"points", @"Points" ], @[ @"Clean", @"outliers", @"Exclude outliers (⇧⌥⌘R)" ],
-        @[ @"Axes", @"axes", @"Axes (⇧⌥⌘G)" ], @[ @"Filter", @"filter", @"Filter (⌥⌘F)" ],
-        @[ @"PNG", @"save-image", @"Save image (⌘S)" ]
+        @[ @"Dots", @"points", @"Points" ], @[ @"Clean", @"outliers", @"Exclude outliers (⇧⌥⌘R)" ]
     ];
     CGFloat x = 3;
     for (NSArray *entry in commands) {
-        CGFloat w = [entry[0] length] > 3 ? 46 : 30;
-        NSButton *button = Button(entry[0], entry[2], self, @selector(action:), NSMakeRect(x, 3, w, 28));
+        CGFloat w = 26;
+        NSButton *button = Icon(entry[1], entry[2], self, @selector(action:), NSMakeRect(x, 4, w, w));
         button.identifier = entry[1];
         button.bordered = NO;
         if ([@[ @"pan", @"zoom", @"line", @"points", @"outliers" ] containsObject:entry[1]])
             button.buttonType = NSButtonTypeToggle;
         self.tools[entry[1]] = button;
         [self.toolbar.contentView addSubview:button];
-        x += w;
+        NSBox *separator = [[NSBox alloc] initWithFrame:NSMakeRect(x + w + 2, 8, 1, 18)];
+        separator.boxType = NSBoxSeparator;
+        [self.toolbar.contentView addSubview:separator];
+        x += w + 6;
     }
-    [self.toolbar.contentView addSubview:Label(@"X", NSMakeRect(x, 9, 12, 18))];
+    [self.toolbar.contentView addSubview:Label(@"X", NSMakeRect(x + 2, 7, 12, 16))];
     x += 12;
-    self.xSelect = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(x, 4, 98, 26) pullsDown:NO];
+    self.xSelect = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(x, 5, 98, 24) pullsDown:NO];
     self.xSelect.target = self;
     self.xSelect.action = @selector(action:);
     self.xSelect.identifier = @"x-select";
     self.xSelect.accessibilityLabel = @"X column";
     [self.toolbar.contentView addSubview:self.xSelect];
     x += 100;
-    [self.toolbar.contentView addSubview:Label(@"Y", NSMakeRect(x, 9, 12, 18))];
     x += 12;
-    self.ySelect = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(x, 4, 98, 26) pullsDown:NO];
-    self.ySelect.target = self;
-    self.ySelect.action = @selector(action:);
-    self.ySelect.identifier = @"y-select";
-    self.ySelect.accessibilityLabel = @"Y column";
-    [self.toolbar.contentView addSubview:self.ySelect];
+    self.yColumnX = x;
+    self.yStack = [[ToolbarPanel alloc] initWithContentRect:NSMakeRect(0, 0, 148, 34)
+                                                  styleMask:NSWindowStyleMaskBorderless
+                                                    backing:NSBackingStoreBuffered
+                                                      defer:NO];
+    self.yStack.title = @"Y Plots";
+    self.yStack.delegate = self;
+    self.yStack.releasedWhenClosed = NO;
+    self.yStack.opaque = NO;
+    self.yStack.backgroundColor = NSColor.clearColor;
+    self.yStack.hasShadow = NO;
+    self.yStack.becomesKeyOnlyIfNeeded = YES;
+    self.yStack.contentView = [[ToolbarSurface alloc] initWithFrame:self.yStack.contentView.bounds];
+    ((ToolbarSurface *)self.yStack.contentView).joinsAbove = YES;
+    self.ySelects = [NSMutableArray new];
+    self.yRemoves = [NSMutableArray new];
+    self.yLabels = [NSMutableArray new];
+    self.yAdd = Icon(@"add", @"Add Y plot", self, @selector(action:), NSMakeRect(x + 102, 4, 26, 26));
+    self.yAdd.identifier = @"add-y";
+    [self.toolbar.contentView addSubview:self.yAdd];
     NSRect r = self.toolbar.frame;
-    r.size.width = x + 101;
+    r.size.width = x + 132;
     [self.toolbar setFrame:r display:NO];
 }
 - (PlotController *)newPlot:(PLGroup *)group {
@@ -1083,12 +1258,17 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
     if (!NSEqualRects(r, self.toolbar.frame))
         [self.toolbar setFrame:r display:YES];
     self.toolbar.level = c.window.level;
+    self.yStack.level = c.window.level;
+    NSRect stack = self.yStack.frame;
+    stack.origin = NSMakePoint(NSMinX(r) + self.yColumnX - 16, NSMinY(r) - stack.size.height);
+    if (!NSEqualRects(stack, self.yStack.frame))
+        [self.yStack setFrame:stack display:YES];
 }
 - (void)syncFocus {
     NSWindow *key = NSApp.keyWindow;
     PlotController *active = nil;
     if (NSApp.isActive) {
-        if (key == self.toolbar)
+        if (key == self.toolbar || key == self.yStack)
             active = self.target;
         else
             for (PlotController *c in self.controllers)
@@ -1116,6 +1296,23 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         [active.window addChildWindow:self.toolbar ordered:NSWindowAbove];
         [self.toolbar orderFront:nil];
     }
+    [self syncYStack];
+}
+- (void)syncYStack {
+    if (self.ySelects.count > 1 && self.target && NSApp.isActive &&
+        self.toolbar.parentWindow == self.target.window) {
+        if (self.yStack.parentWindow != self.toolbar)
+            [self.toolbar addChildWindow:self.yStack ordered:NSWindowAbove];
+        if (!self.yStack.visible)
+            [self.yStack orderFront:nil];
+    } else {
+        PlotController *owner = self.target;
+        BOOL restoreFocus = self.ySelects.count <= 1 && self.yStack.keyWindow && owner && NSApp.isActive;
+        [self.yStack.parentWindow removeChildWindow:self.yStack];
+        [self.yStack orderOut:nil];
+        if (restoreFocus && owner.window.visible)
+            [owner.window makeKeyWindow];
+    }
 }
 - (void)updateToolbar {
     PlotController *c = self.target;
@@ -1131,16 +1328,69 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
     self.tools[@"outliers"].state = c.outliers;
     self.tools[@"undo-view"].enabled = loaded && c.historyIndex > 0;
     self.tools[@"redo-view"].enabled = loaded && c.historyIndex + 1 < (NSInteger)c.history.count;
-    self.xSelect.enabled = self.ySelect.enabled = loaded;
+    self.xSelect.enabled = self.yAdd.enabled = loaded;
     NSArray *titles = c.group.columns ?: @[];
     if (![self.xSelect.itemTitles isEqual:titles]) {
         [self.xSelect removeAllItems];
-        [self.ySelect removeAllItems];
         [self.xSelect addItemsWithTitles:titles];
-        [self.ySelect addItemsWithTitles:titles];
     }
     [self.xSelect selectItemWithTitle:c.x ?: @""];
-    [self.ySelect selectItemWithTitle:c.ys.lastObject ?: @""];
+    NSUInteger count = MAX(1ul, c.ys.count);
+    while (self.ySelects.count > count) {
+        [self.ySelects.lastObject removeFromSuperview];
+        [self.yRemoves.lastObject removeFromSuperview];
+        [self.yLabels.lastObject removeFromSuperview];
+        [self.ySelects removeLastObject];
+        [self.yRemoves removeLastObject];
+        [self.yLabels removeLastObject];
+    }
+    while (self.ySelects.count < count) {
+        NSPopUpButton *select = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+        select.target = self;
+        select.action = @selector(action:);
+        select.identifier = @"y-select";
+        [self.ySelects addObject:select];
+        [(self.ySelects.count == 1 ? self.toolbar.contentView : self.yStack.contentView) addSubview:select];
+        NSButton *remove = Icon(@"remove", @"Remove Y plot", self, @selector(action:), NSZeroRect);
+        remove.identifier = @"remove-y";
+        [self.yRemoves addObject:remove];
+        [(self.yRemoves.count == 1 ? self.toolbar.contentView : self.yStack.contentView) addSubview:remove];
+        NSTextField *label = Label(@"Y", NSZeroRect);
+        [self.yLabels addObject:label];
+        [(self.yLabels.count == 1 ? self.toolbar.contentView : self.yStack.contentView) addSubview:label];
+    }
+    ToolbarSurface *surface = (ToolbarSurface *)self.toolbar.contentView;
+    surface.joinsBelow = count > 1;
+    surface.joinX = self.yColumnX - 16;
+    CGFloat height = MAX(32, (count - 1) * 32);
+    if (self.yStack.frame.size.height != height)
+        [self.yStack setContentSize:NSMakeSize(148, height)];
+    for (NSUInteger i = 0; i < count; i++) {
+        NSPopUpButton *select = self.ySelects[i];
+        if (![select.itemTitles isEqual:titles]) {
+            [select removeAllItems];
+            [select addItemsWithTitles:titles];
+        }
+        select.tag = i;
+        select.accessibilityLabel = [NSString stringWithFormat:@"Y column %lu", i + 1];
+        select.enabled = loaded;
+        [select selectItemWithTitle:loaded ? c.ys[i] : @""];
+        CGFloat y = i == 0 ? 5 : height - 27 - (i - 1) * 32;
+        CGFloat x = i == 0 ? self.yColumnX : 16;
+        select.frame = NSMakeRect(x, y, 98, 24);
+        self.yLabels[i].frame = NSMakeRect(x - 10, y + 2, 12, 16);
+        NSButton *remove = self.yRemoves[i];
+        remove.tag = i;
+        remove.hidden = i == 0;
+        remove.frame = NSMakeRect(x + 102, y - 1, 26, 26);
+        remove.enabled = loaded;
+    }
+    self.ySelect = self.ySelects.firstObject;
+    self.yAdd.frame = NSMakeRect(self.yColumnX + 102, 4, 26, 26);
+    [self placeToolbar];
+    self.toolbar.contentView.needsDisplay = YES;
+    self.yStack.contentView.needsDisplay = YES;
+    [self syncYStack];
 }
 - (void)openPaths:(NSArray<NSString *> *)paths reply:(BOOL)reply {
     dispatch_async(self.loader, ^{
@@ -1168,16 +1418,10 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
 }
 - (void)showSettings {
     if (!self.settings) {
-        NSWindow *window =
-            [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 360, 130)
-                                        styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
-                                          backing:NSBackingStoreBuffered
-                                            defer:NO];
-        window.title = @"Settings";
-        window.releasedWhenClosed = NO;
+        NSWindow *window = MakePanel(@"Settings", NSMakeSize(360, 130));
         self.settings = [[NSWindowController alloc] initWithWindow:window];
         NSView *v = window.contentView;
-        [v addSubview:Label(@"Theme", NSMakeRect(16, 83, 85, 24))];
+        [v addSubview:Label(@"Theme", NSMakeRect(16, 88, 85, 16))];
         NSPopUpButton *theme = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(110, 82, 230, 28)
                                                           pullsDown:NO];
         [theme addItemsWithTitles:@[ @"System", @"Light", @"Dark" ]];
@@ -1187,7 +1431,7 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         theme.target = self;
         theme.action = @selector(settingChanged:);
         [v addSubview:theme];
-        [v addSubview:Label(@"Editor", NSMakeRect(16, 39, 85, 24))];
+        [v addSubview:Label(@"Editor", NSMakeRect(16, 45, 85, 16))];
         NSTextField *editor =
             Input([NSUserDefaults.standardUserDefaults stringForKey:@"editor"], NSMakeRect(110, 40, 230, 24));
         editor.placeholderString = @"Default text editor";
@@ -1216,8 +1460,7 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
         [sender isKindOfClass:NSMenuItem.class] ? [sender representedObject] : [sender identifier];
     PlotController *c = self.target;
     for (PlotController *owner in self.controllers)
-        if (NSApp.keyWindow == owner.window || NSApp.keyWindow == owner.axesPanel ||
-            NSApp.keyWindow == owner.filterPanel)
+        if (NSApp.keyWindow == owner.window || NSApp.keyWindow == owner.filterPanel)
             c = owner;
     NSResponder *responder = NSApp.keyWindow.firstResponder;
     if ([responder isKindOfClass:NSTextView.class] &&
@@ -1235,9 +1478,11 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
     else if ([action isEqual:@"new"])
         [self newPlot:nil];
     else if ([action isEqual:@"close"])
-        [(NSApp.keyWindow == self.toolbar ? c.window : NSApp.keyWindow) close];
+        [((NSApp.keyWindow == self.toolbar || NSApp.keyWindow == self.yStack) ? c.window : NSApp.keyWindow)
+            close];
     else if ([action isEqual:@"minimize"])
-        [(NSApp.keyWindow == self.toolbar ? c.window : NSApp.keyWindow) miniaturize:nil];
+        [((NSApp.keyWindow == self.toolbar || NSApp.keyWindow == self.yStack) ? c.window : NSApp.keyWindow)
+            miniaturize:nil];
     else if ([action isEqual:@"settings"])
         [self showSettings];
     else if ([action isEqual:@"open"]) {
@@ -1252,28 +1497,29 @@ static BOOL ReadLimits(NSTextField *min, NSTextField *max, double *lo, double *h
             if (result == NSModalResponseOK)
                 [self openPaths:[panel.URLs valueForKey:@"path"] reply:NO];
         }];
-    } else if ([action hasSuffix:@"-x"] || [action hasSuffix:@"-y"])
+    } else if ([@[ @"next-x", @"previous-x", @"next-y", @"previous-y" ] containsObject:action])
         [c cycle:[action hasSuffix:@"-x"] backwards:[action hasPrefix:@"previous"]];
-    else if ([action isEqual:@"x-select"] || [action isEqual:@"y-select"]) {
-        BOOL x = [action isEqual:@"x-select"];
+    else if ([action isEqual:@"add-y"])
+        [c addY];
+    else if ([action isEqual:@"remove-y"])
+        [c removeY:[sender tag]];
+    else if ([action isEqual:@"y-select"]) {
+        NSUInteger index = [sender tag];
+        if (index >= c.ys.count)
+            return;
+        NSMutableArray *columns = [c.ys mutableCopy], *indexes = [NSMutableArray new];
+        for (NSUInteger i = 0; i < columns.count; i++)
+            [indexes addObject:i == index ? @(-1) : @(i)];
+        columns[index] = [sender titleOfSelectedItem];
+        [c setYColumns:columns keeping:indexes];
+    } else if ([action isEqual:@"x-select"]) {
         NSArray *before = [c ranges];
-        if (x)
-            c.x = self.xSelect.titleOfSelectedItem;
-        else {
-            NSMutableArray *ys = [c.ys mutableCopy];
-            ys[ys.count - 1] = self.ySelect.titleOfSelectedItem;
-            c.ys = ys;
-        }
+        c.x = self.xSelect.titleOfSelectedItem;
         [c rebuild];
         for (NSUInteger i = 0; i < c.charts.count; i++) {
             Bounds b = c.charts[i].range, old = Unbox(before[i]);
-            if (x) {
-                b.y = old.y;
-                b.height = old.height;
-            } else {
-                b.x = old.x;
-                b.width = old.width;
-            }
+            b.y = old.y;
+            b.height = old.height;
             c.charts[i].range = b;
             [c.charts[i] refresh];
         }
