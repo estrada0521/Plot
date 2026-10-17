@@ -348,6 +348,8 @@ static NSString *TickLabel(double value, double step, double origin) {
     [self.annotation setNeedsDisplay:YES];
 }
 - (void)mouseDown:(NSEvent *)e {
+    if (self.activate)
+        self.activate();
     [self.window makeFirstResponder:self];
     self.dragStart = [self convertPoint:e.locationInWindow fromView:nil];
     self.dragCurrent = self.dragStart;

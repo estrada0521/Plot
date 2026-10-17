@@ -8,6 +8,7 @@
 @property(nonatomic) NSUInteger selected;
 @property(nonatomic) BOOL points, pan, showsXLabels;
 @property(nonatomic, copy) void (^changed)(PLChart *chart, BOOL finished);
+@property(nonatomic, copy) void (^activate)(void);
 @property(nonatomic, copy) void (^selectDataset)(NSInteger delta);
 @property(nonatomic, copy) void (^navigate)(BOOL forward);
 @property(nonatomic, readonly) NSRect plotRect;

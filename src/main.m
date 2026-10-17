@@ -390,8 +390,30 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
 }
 
 @interface PlotWindow : NSWindow
+@property(nonatomic, copy) void (^axisCommand)(NSString *command);
 @end
 @implementation PlotWindow
+- (BOOL)handleAxisKey:(NSEvent *)event {
+    if (event.type != NSEventTypeKeyDown || !self.axisCommand ||
+        [self.firstResponder isKindOfClass:NSTextView.class])
+        return NO;
+    NSEventModifierFlags mods =
+        event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+                               NSEventModifierFlagOption | NSEventModifierFlagShift);
+    NSString *key = event.charactersIgnoringModifiers.lowercaseString;
+    NSString *command = nil;
+    if (mods == NSEventModifierFlagCommand && [key isEqual:@"0"])
+        command = @"reset-axes";
+    else if ((mods == 0 || mods == NSEventModifierFlagShift) && ([key isEqual:@"x"] || [key isEqual:@"y"]))
+        command = [NSString stringWithFormat:@"%@-%@", mods ? @"previous" : @"next", key];
+    if (!command)
+        return NO;
+    self.axisCommand(command);
+    return YES;
+}
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+    return [self handleAxisKey:event] || [super performKeyEquivalent:event];
+}
 - (BOOL)canBecomeKeyWindow {
     return YES;
 }
@@ -399,6 +421,8 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     return YES;
 }
 - (void)sendEvent:(NSEvent *)e {
+    if ([self handleAxisKey:e])
+        return;
     if (e.type != NSEventTypeLeftMouseDown) {
         [super sendEvent:e];
         return;
@@ -455,6 +479,19 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
 @interface PlotRoot : NSView
 @property(nonatomic, weak) PlotController *controller;
 @end
+@interface YAxisSelect : NSPopUpButton
+@property(nonatomic) BOOL activeAxis;
+@end
+@implementation YAxisSelect
+- (void)drawRect:(NSRect)dirty {
+    [super drawRect:dirty];
+    if (self.activeAxis) {
+        [[NSColor.labelColor colorWithAlphaComponent:.14] setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 1, 1) xRadius:5 yRadius:5] fill];
+    }
+}
+@end
+
 @interface PlotApp : NSObject <NSApplicationDelegate, NSWindowDelegate>
 @property(nonatomic) Renderer *renderer;
 @property(nonatomic) NSMutableArray<PlotController *> *controllers;
@@ -490,7 +527,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
 @property(nonatomic) NSButton *pin;
 @property(nonatomic) PLGroup *group;
 @property(nonatomic) NSMutableArray<PLChart *> *charts;
-@property(nonatomic) NSUInteger selected;
+@property(nonatomic) NSUInteger selected, activeY;
 @property(nonatomic) NSString *x;
 @property(nonatomic) NSArray<NSString *> *ys;
 @property(nonatomic) NSArray<NSDictionary *> *rules;
@@ -582,6 +619,19 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
                                           defer:NO];
     self.window.releasedWhenClosed = NO;
     self.window.delegate = self;
+    __weak PlotController *weak = self;
+    ((PlotWindow *)self.window).axisCommand = ^(NSString *command) {
+        PlotController *controller = weak;
+        if (!controller.group)
+            return;
+        if ([command isEqual:@"reset-axes"]) {
+            controller.x = controller.group.x;
+            controller.ys = @[ controller.group.y ];
+            [controller rebuild];
+        } else
+            [controller cycle:[command hasSuffix:@"-x"] backwards:[command hasPrefix:@"previous"]];
+        [controller.app updateToolbar];
+    };
     self.window.title = @"Plot";
     self.window.minSize = NSMakeSize(240, 170);
     self.window.opaque = YES;
@@ -728,6 +778,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
 - (void)rebuild {
     if (!self.group)
         return;
+    self.activeY = MIN(self.activeY, self.ys.count - 1);
     for (PLChart *chart in self.charts)
         [chart removeFromSuperview];
     [self.charts removeAllObjects];
@@ -772,6 +823,11 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         chart.points = self.points;
         chart.pan = self.pan;
         chart.range = PLSeriesExtent(series);
+        NSUInteger row = self.charts.count;
+        chart.activate = ^{
+            weak.activeY = row;
+            [weak.app updateToolbar];
+        };
         chart.selectDataset = ^(NSInteger delta) {
             [weak choose:delta];
         };
@@ -815,7 +871,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     NSArray *columns = self.group.columns;
     if (!columns.count)
         return;
-    NSString *old = x ? self.x : self.ys.lastObject;
+    NSString *old = x ? self.x : self.ys[self.activeY];
     NSUInteger index = [columns indexOfObject:old];
     index = (index + columns.count + (backwards ? -1 : 1)) % columns.count;
     NSArray *before = [self ranges];
@@ -823,8 +879,12 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         self.x = columns[index];
     else {
         NSMutableArray *ys = [self.ys mutableCopy];
-        ys[ys.count - 1] = columns[index];
-        self.ys = ys;
+        ys[self.activeY] = columns[index];
+        NSMutableArray *indexes = [NSMutableArray new];
+        for (NSUInteger i = 0; i < ys.count; i++)
+            [indexes addObject:i == self.activeY ? @(-1) : @(i)];
+        [self setYColumns:ys keeping:indexes];
+        return;
     }
     [self rebuild];
     for (NSUInteger i = 0; i < MIN(before.count, self.charts.count); i++) {
@@ -994,6 +1054,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     NSMutableArray *columns = [self.ys mutableCopy], *indexes = [NSMutableArray new];
     for (NSUInteger i = 0; i < columns.count; i++)
         [indexes addObject:@(i)];
+    self.activeY = columns.count;
     [columns addObject:column];
     [indexes addObject:@(-1)];
     [self setYColumns:columns keeping:indexes];
@@ -1005,6 +1066,10 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     for (NSUInteger i = 0; i < columns.count; i++)
         if (i != index)
             [indexes addObject:@(i)];
+    if (self.activeY > index)
+        self.activeY--;
+    else if (self.activeY == index)
+        self.activeY = MIN(index, columns.count - 2);
     [columns removeObjectAtIndex:index];
     [self setYColumns:columns keeping:indexes];
 }
@@ -1170,6 +1235,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         PlotController *copy = [self.app newPlot:self.group];
         copy.x = self.x;
         copy.ys = self.ys;
+        copy.activeY = self.activeY;
         copy.rules = self.rules;
         copy.points = self.points;
         copy.pan = self.pan;
@@ -1314,10 +1380,10 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         @[
             @"Tools", @[ @"Filter…", @"filter", @"f", @(alt) ],
             @[ @"Exclude Outliers", @"outliers", @"r", @(alt | NSEventModifierFlagShift) ],
-            @[ @"Next X Column", @"next-x", @"x", @(cmd) ],
-            @[ @"Previous X Column", @"previous-x", @"x", @(shift) ],
-            @[ @"Next Y Column", @"next-y", @"y", @(cmd) ],
-            @[ @"Previous Y Column", @"previous-y", @"y", @(shift) ]
+            @[ @"Reset Axes", @"reset-axes", @"0", @(cmd) ], @[ @"Next X Column", @"next-x", @"x", @0 ],
+            @[ @"Previous X Column", @"previous-x", @"x", @(NSEventModifierFlagShift) ],
+            @[ @"Next Y Column", @"next-y", @"y", @0 ],
+            @[ @"Previous Y Column", @"previous-y", @"y", @(NSEventModifierFlagShift) ]
         ],
         @[
             @"Window", @[ @"Close Window", @"close", @"w", @(cmd) ],
@@ -1572,7 +1638,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         [self.yLabels removeLastObject];
     }
     while (self.ySelects.count < count) {
-        NSPopUpButton *select = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+        NSPopUpButton *select = [[YAxisSelect alloc] initWithFrame:NSZeroRect pullsDown:NO];
         select.target = self;
         select.action = @selector(action:);
         select.identifier = @"y-select";
@@ -1598,6 +1664,8 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
             [select removeAllItems];
             [select addItemsWithTitles:titles];
         }
+        ((YAxisSelect *)select).activeAxis = loaded && count > 1 && c.activeY == i;
+        select.needsDisplay = YES;
         select.tag = i;
         select.accessibilityLabel = [NSString stringWithFormat:@"Y column %lu", i + 1];
         select.enabled = loaded;
@@ -1726,7 +1794,12 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         }];
     } else if ([@[ @"next-x", @"previous-x", @"next-y", @"previous-y" ] containsObject:action])
         [c cycle:[action hasSuffix:@"-x"] backwards:[action hasPrefix:@"previous"]];
-    else if ([action isEqual:@"add-y"])
+    else if ([action isEqual:@"reset-axes"] && c.group) {
+        c.x = c.group.x;
+        c.ys = @[ c.group.y ];
+        [c rebuild];
+        [self updateToolbar];
+    } else if ([action isEqual:@"add-y"])
         [c addY];
     else if ([action isEqual:@"remove-y"])
         [c removeY:[sender tag]];
@@ -1737,6 +1810,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         NSMutableArray *columns = [c.ys mutableCopy], *indexes = [NSMutableArray new];
         for (NSUInteger i = 0; i < columns.count; i++)
             [indexes addObject:i == index ? @(-1) : @(i)];
+        c.activeY = index;
         columns[index] = [sender titleOfSelectedItem];
         [c setYColumns:columns keeping:indexes];
     } else if ([action isEqual:@"x-select"]) {
@@ -1793,6 +1867,9 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         return YES;
     PlotController *c = self.target;
     BOOL loaded = c.group != nil;
+    if ([@[ @"next-x", @"previous-x", @"next-y", @"previous-y" ] containsObject:a])
+        return loaded && NSApp.keyWindow == c.window &&
+               ![NSApp.keyWindow.firstResponder isKindOfClass:NSTextView.class];
     if ([a isEqual:@"copy"] && [NSApp.keyWindow.firstResponder isKindOfClass:NSTextView.class])
         return YES;
     if ([a isEqual:@"close"] || [a isEqual:@"minimize"])

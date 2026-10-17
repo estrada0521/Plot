@@ -49,8 +49,9 @@ Installs to `/Applications/Plot.app` and launches it. Run `./build` again to upd
 - Open in editor (configurable) — `⌘E`
 - Copy absolute path — `⌥⌘C`
 - Save panel image (to Downloads) — `⌘S`
-- Next / previous X-axis column — `⌘X` / `⇧⌘X`
-- Next / previous Y-axis column — `⌘Y` / `⇧⌘Y`
+- Reset to default X/Y axes — `⌘0`
+- Next / previous X-axis column — `X` / `⇧X`
+- Next / previous Y-axis column — `Y` / `⇧Y` (last clicked plot; its Y selector is highlighted)
 - Open the filter window — `⌥⌘F`
 - Exclude outliers — `⇧⌥⌘R`
 - Settings — `⌘,`
