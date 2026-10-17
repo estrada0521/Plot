@@ -9,10 +9,7 @@ A plotting app for macOS.
 </div>
 
 <p align="center">
-  <img src="media/light.png" width="100%" alt="Plot, light mode">
-</p>
-<p align="center">
-  <img src="media/dark.png" width="100%" alt="Plot, dark mode">
+  <img src="media/light.png" width="80%" alt="Plot, light mode">
 </p>
 
 ---
