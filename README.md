@@ -4,36 +4,34 @@
 
 A plotting app for macOS.
 
-[日本語](README_jp.md)
+[日本語](README.jp.md)
 
 </div>
 
 <p align="center">
-  <img src="images/light.png" width="100%" alt="Plot, light mode">
+  <img src="media/light.png" width="100%" alt="Plot, light mode">
 </p>
 <p align="center">
-  <img src="images/dark.png" width="100%" alt="Plot, dark mode">
+  <img src="media/dark.png" width="100%" alt="Plot, dark mode">
 </p>
 
 ---
 
 ## Usage
 
-Open files to plot them. Files opened together share one window when their default X/Y column names match. Without default axes, the first two columns are used.
+Open CSV, DAT, RAS or SPEC TXT files. Compatible files opened together appear in one window.
 
-The selected dataset appears in black; the others stay gray. Use the arrow keys to switch datasets and update the header. The toolbar appears only for the focused window.
+Use the arrow keys to change the highlighted dataset. The toolbar appears for the focused window. Use `+` beside Y to add a plot.
 
 ## Setup
 
-Requires macOS 13.3+ with Metal support and Xcode Command Line Tools.
+Requires Xcode Command Line Tools.
 
 ```sh
-./bin/install-app
+./build
 ```
 
-Installs to `/Applications/Plot.app` and launches it. Run `./bin/install-app` again to update.
-
-Built with Objective-C, AppKit and Metal. No external runtime or libraries. [Rendering and benchmarks](docs/rendering.md).
+Installs to `/Applications/Plot.app` and launches it. Run `./build` again to update.
 
 ## Shortcuts
 

@@ -1,9 +1,4 @@
 .DS_Store
-app-icon.png
-
-# ローカル/ハーネス
+/.local/
+/.agent-window
 .claude/settings.local.json
-.agent-window/
-icon-candidates/
-
-build/

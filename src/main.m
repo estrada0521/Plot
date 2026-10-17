@@ -16,7 +16,7 @@ static NSColor *RGB(CGFloat r, CGFloat g, CGFloat b, CGFloat alpha) {
 static void DrawHeader(NSRect r, BOOL separator) {
     BOOL dark = DarkChrome();
     NSGradient *gradient = [[NSGradient alloc]
-        initWithColors:dark ? @[ RGB(17, 17, 16, 1), RGB(14, 14, 13, 1), RGB(10, 10, 9, 1) ]
+        initWithColors:dark ? @[ RGB(9, 9, 9, 1), RGB(9, 9, 9, 1), RGB(9, 9, 9, 1) ]
                             : @[ RGB(251, 251, 249, 1), RGB(249, 249, 247, 1), RGB(244, 244, 242, 1) ]];
     [gradient drawInRect:r angle:270];
     [[NSColor.whiteColor colorWithAlphaComponent:dark ? .06 : .9] setFill];
@@ -471,7 +471,6 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
 @property(nonatomic) NSWindowController *settings;
 @property(nonatomic) dispatch_queue_t loader;
 @property(nonatomic) NSArray<NSString *> *initialPaths;
-@property(nonatomic) NSUInteger syntheticCount, syntheticWindows;
 - (void)syncFocus;
 - (void)updateToolbar;
 - (void)placeToolbar;
@@ -1824,43 +1823,6 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         [self newPlot:nil];
     if (self.initialPaths.count)
         [self openPaths:self.initialPaths reply:NO];
-    if (self.syntheticCount) {
-        dispatch_async(self.loader, ^{
-            @autoreleasepool {
-                NSMutableArray *groups = [NSMutableArray new];
-                for (NSUInteger j = 0; j < self.syntheticWindows; j++) {
-                    NSMutableData *values =
-                        [NSMutableData dataWithLength:self.syntheticCount * 2 * sizeof(double)];
-                    double *v = values.mutableBytes;
-                    for (NSUInteger i = 0; i < self.syntheticCount; i++) {
-                        double x = (double)i / MAX(1ul, self.syntheticCount - 1) * 100;
-                        v[i * 2] = x;
-                        v[i * 2 + 1] = sin(x * .25 + j * .1) + .05 * sin(x * 11);
-                    }
-                    PLDataset *d = [PLDataset new];
-                    d.columns = @[ @"X", @"Y" ];
-                    d.defaultX = @"X";
-                    d.defaultY = @"Y";
-                    d.name =
-                        [NSString stringWithFormat:@"Synthetic %lu (%lu points)", j + 1, self.syntheticCount];
-                    d.values = values;
-                    PLGroup *g = [PLGroup new];
-                    g.columns = d.columns;
-                    g.x = @"X";
-                    g.y = @"Y";
-                    g.items = @[ d ];
-                    [groups addObject:g];
-                }
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    for (PLGroup *g in groups)
-                        [self newPlot:g];
-                    for (PlotController *c in [self.controllers copy])
-                        if (!c.group)
-                            [c.window close];
-                });
-            }
-        });
-    }
     [NSApp activateIgnoringOtherApps:YES];
 }
 - (void)application:(NSApplication *)application openFiles:(NSArray<NSString *> *)filenames {
@@ -1904,19 +1866,10 @@ int main(int argc, const char *argv[]) {
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
         PlotApp *app = [PlotApp new];
         NSMutableArray *paths = [NSMutableArray new];
-        app.syntheticWindows = 1;
         for (int i = 1; i < argc; i++) {
             NSString *arg = @(argv[i]);
-            if ([arg isEqual:@"--synthetic"] && i + 1 < argc)
-                app.syntheticCount = MAX(1, [@(argv[++i]) integerValue]);
-            else if ([arg isEqual:@"--windows"] && i + 1 < argc)
-                app.syntheticWindows = MAX(1, [@(argv[++i]) integerValue]);
-            else if (![arg hasPrefix:@"-"])
+            if (![arg hasPrefix:@"-"])
                 [paths addObject:arg];
-        }
-        if (app.syntheticCount > 10000000 || app.syntheticWindows > 32) {
-            fprintf(stderr, "Synthetic preview limits: 10 million points, 32 windows\n");
-            return 1;
         }
         app.initialPaths = paths;
         NSApp.delegate = app;

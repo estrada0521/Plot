@@ -19,7 +19,7 @@ typedef struct {
     double background, ink, axis, selected, context;
 } PlotPalette;
 static inline PlotPalette PLPlotPalette(BOOL dark) {
-    return dark ? (PlotPalette){.07, .88, .68, .92, .42} : (PlotPalette){1, 0, .08, .08, .72};
+    return dark ? (PlotPalette){13.0 / 255.0, .88, .68, .92, .42} : (PlotPalette){1, 0, .08, .08, .72};
 }
 static inline BOOL PLPlotIsDark(NSAppearance *appearance) {
     return [[(appearance ?: NSAppearance.currentDrawingAppearance) bestMatchFromAppearancesWithNames:@[
@@ -37,7 +37,6 @@ static inline NSColor *PLPlotGray(double value, double alpha) {
 @property(nonatomic) NSData *raw;
 @property(nonatomic) id<MTLBuffer> buffer;
 @property(nonatomic) double xMin, xMax, yMin, yMax;
-@property(nonatomic) double prepareMS;
 @property(nonatomic) Bounds bufferBounds;
 - (instancetype)initWithData:(NSData *)data name:(NSString *)name device:(id<MTLDevice>)device;
 @end
@@ -45,7 +44,6 @@ static inline NSColor *PLPlotGray(double value, double alpha) {
 @property(nonatomic) id<MTLDevice> device;
 @property(nonatomic) id<MTLCommandQueue> queue;
 @property(nonatomic) id<MTLRenderPipelineState> lines, points;
-@property(nonatomic) double setupMS;
 - (id<MTLCommandBuffer>)encode:(MTLRenderPassDescriptor *)pass
                         series:(NSArray<Series *> *)series
                       selected:(NSUInteger)selected

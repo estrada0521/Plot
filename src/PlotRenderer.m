@@ -1,9 +1,5 @@
 #import "PlotRenderer.h"
 #include <float.h>
-#include <time.h>
-static double Now(void) {
-    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1e9;
-}
 static void Require(BOOL ok, NSString *message) {
     if (!ok)
         @throw [NSException exceptionWithName:@"PlotRenderer" reason:message userInfo:nil];
@@ -12,7 +8,6 @@ static void Require(BOOL ok, NSString *message) {
 - (instancetype)initWithData:(NSData *)data name:(NSString *)name device:(id<MTLDevice>)device {
     if (!(self = [super init]))
         return nil;
-    double start = Now();
     self.raw = data;
     self.name = name;
     self.xName = @"X";
@@ -49,7 +44,6 @@ static void Require(BOOL ok, NSString *message) {
                                       options:MTLResourceStorageModeShared];
     Require(self.buffer != nil, @"Cannot allocate vertex buffer");
     [self rebaseToBounds:(Bounds){self.xMin, self.yMin, self.xMax - self.xMin, self.yMax - self.yMin}];
-    self.prepareMS = (Now() - start) * 1000;
     return self;
 }
 - (void)rebaseToBounds:(Bounds)b {
@@ -74,18 +68,17 @@ static void Require(BOOL ok, NSString *message) {
 - (instancetype)init {
     if (!(self = [super init]))
         return nil;
-    double start = Now();
     self.device = MTLCreateSystemDefaultDevice();
     Require(self.device != nil, @"Metal is unavailable");
     self.queue = [self.device newCommandQueue];
-    NSString *root =
-        NSProcessInfo.processInfo.arguments[0]
-            .stringByStandardizingPath.stringByDeletingLastPathComponent.stringByDeletingLastPathComponent;
     NSString *shader = [NSBundle.mainBundle.resourcePath stringByAppendingPathComponent:@"plot.metal"];
+#ifdef PLOT_TESTING
     if (![NSFileManager.defaultManager fileExistsAtPath:shader])
-        shader = [root stringByAppendingPathComponent:@"native/plot.metal"];
+        shader = [NSFileManager.defaultManager.currentDirectoryPath
+            stringByAppendingPathComponent:@"src/plot.metal"];
+#endif
     NSString *source = [NSString stringWithContentsOfFile:shader encoding:NSUTF8StringEncoding error:nil];
-    Require(source != nil, @"Cannot find native/plot.metal; run bin/metal-preview from this checkout");
+    Require(source != nil, @"Cannot load plot shaders.");
     NSError *error;
     MTLCompileOptions *options = [MTLCompileOptions new];
     // NaN checks preserve missing-data gaps; fast math may assume all values are finite.
@@ -106,7 +99,6 @@ static void Require(BOOL ok, NSString *message) {
         else
             self.lines = pipeline;
     }
-    self.setupMS = (Now() - start) * 1000;
     return self;
 }
 - (id<MTLCommandBuffer>)encode:(MTLRenderPassDescriptor *)pass

@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-cd "$(dirname "$0")/.."
-mkdir -p build
-clang -fobjc-arc -O2 -Wall -Wextra -Wno-unused-parameter -mmacosx-version-min=13.3 \
-  -framework Cocoa -framework Metal -framework MetalKit -framework QuartzCore \
-  native/PlotRenderer.m native/benchmark.m -o build/benchmark-metal
-exec build/benchmark-metal "$@"

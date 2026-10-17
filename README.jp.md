@@ -2,34 +2,32 @@
 
 # Plot
 
-macOS用のグラフ表示アプリ。
+A plotting app for macOS.
 
 [English](README.md)
 
 </div>
 
 <p align="center">
-  <img src="images/light.png" width="100%" alt="Plot、ライトモード">
+  <img src="media/light.png" width="100%" alt="Plot、ライトモード">
 </p>
 <p align="center">
-  <img src="images/dark.png" width="100%" alt="Plot、ダークモード">
+  <img src="media/dark.png" width="100%" alt="Plot、ダークモード">
 </p>
 
 ---
 
 ## Setup
 
-Metal対応のmacOS 13.3以降と、Xcode Command Line Toolsが必要です。
+Xcode Command Line Toolsが必要。
 
 ```sh
-./bin/install-app
+./build
 ```
 
-`/Applications/Plot.app` にインストールして起動します。更新時も `./bin/install-app` を実行します。
+`/Applications/Plot.app` にインストールして起動される。
 
-Objective-C・AppKit・Metalで構成し、外部ランタイムやライブラリは使いません。[描画と比較結果](docs/rendering.md)。
-
-## ショートカット
+## Shortcuts
 
 <details>
 <summary>一覧</summary>
