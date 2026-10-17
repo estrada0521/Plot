@@ -19,6 +19,4 @@
 @property(nonatomic, copy) NSString *y;
 @end
 NSArray<PLGroup *> *PLReadGroups(NSArray<NSString *> *paths, NSMutableArray<NSString *> *errors);
-NSIndexSet *PLFilteredRows(PLDataset *dataset, NSArray<NSDictionary *> *rules);
 NSIndexSet *PLRemoveOutliers(PLDataset *dataset, NSIndexSet *rows, NSUInteger x, NSArray<NSNumber *> *ys);
-BOOL PLWriteCSV(PLGroup *group, NSArray<NSDictionary *> *rules, NSURL *url, NSError **error);

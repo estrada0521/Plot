@@ -25,10 +25,6 @@ static NSImage *PlotIcon(NSString *name, BOOL filled) {
             } else if ([name isEqual:@"remove"]) {
                 M(5, 12);
                 L(19, 12);
-            } else if ([name isEqual:@"apply"]) {
-                M(4, 12);
-                L(10, 18);
-                L(20, 6);
             } else if ([name isEqual:@"close"]) {
                 M(7, 7);
                 L(17, 17);

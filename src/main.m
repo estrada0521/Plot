@@ -13,19 +13,12 @@ static BOOL DarkChrome(void) {
 static NSColor *RGB(CGFloat r, CGFloat g, CGFloat b, CGFloat alpha) {
     return [NSColor colorWithSRGBRed:r / 255 green:g / 255 blue:b / 255 alpha:alpha];
 }
-static void DrawHeader(NSRect r, BOOL separator) {
+static void DrawHeader(NSRect r) {
     BOOL dark = DarkChrome();
     NSGradient *gradient = [[NSGradient alloc]
         initWithColors:dark ? @[ RGB(9, 9, 9, 1), RGB(9, 9, 9, 1), RGB(9, 9, 9, 1) ]
                             : @[ RGB(251, 251, 249, 1), RGB(249, 249, 247, 1), RGB(244, 244, 242, 1) ]];
     [gradient drawInRect:r angle:270];
-    [[NSColor.whiteColor colorWithAlphaComponent:dark ? .06 : .9] setFill];
-    NSRectFill(NSMakeRect(r.origin.x, NSMaxY(r) - 1, r.size.width, 1));
-    if (separator) {
-        [(dark ? RGB(13, 13, 12, 1) : [NSColor.blackColor colorWithAlphaComponent:.15]) setFill];
-        NSRectFillUsingOperation(NSMakeRect(r.origin.x, r.origin.y, r.size.width, 1),
-                                 NSCompositingOperationSourceOver);
-    }
 }
 static NSBezierPath *ToolbarOutline(NSRect r, BOOL joinsAbove, BOOL joinsBelow) {
     CGFloat left = NSMinX(r), right = NSMaxX(r), bottom = NSMinY(r), top = NSMaxY(r);
@@ -65,49 +58,6 @@ static NSBezierPath *ToolbarOutline(NSRect r, BOOL joinsAbove, BOOL joinsBelow) 
     NSBezierPath *fill = [self outlineInRect:self.bounds];
     [(dark ? RGB(18, 18, 17, .88) : RGB(235, 235, 233, .88)) setFill];
     [fill fill];
-    NSRect r = NSInsetRect(self.bounds, .5, .5);
-    NSBezierPath *border = [self outlineInRect:r];
-    if (self.joinsAbove) {
-        // The top belongs to the toolbar; only the two sides and bottom have an edge.
-        border = [NSBezierPath bezierPath];
-        [border moveToPoint:NSMakePoint(NSMinX(r), NSMaxY(self.bounds))];
-        [border lineToPoint:NSMakePoint(NSMinX(r), NSMinY(r) + 6)];
-        [border appendBezierPathWithArcFromPoint:NSMakePoint(NSMinX(r), NSMinY(r))
-                                         toPoint:NSMakePoint(NSMinX(r) + 6, NSMinY(r))
-                                          radius:6];
-        [border lineToPoint:NSMakePoint(NSMaxX(r) - 6, NSMinY(r))];
-        [border appendBezierPathWithArcFromPoint:NSMakePoint(NSMaxX(r), NSMinY(r))
-                                         toPoint:NSMakePoint(NSMaxX(r), NSMinY(r) + 6)
-                                          radius:6];
-        [border lineToPoint:NSMakePoint(NSMaxX(r), NSMaxY(self.bounds))];
-    } else if (self.joinsBelow) {
-        border = [NSBezierPath bezierPath];
-        [border moveToPoint:NSMakePoint(self.joinX + .5, NSMinY(r))];
-        [border lineToPoint:NSMakePoint(NSMinX(r) + 6, NSMinY(r))];
-        [border appendBezierPathWithArcFromPoint:NSMakePoint(NSMinX(r), NSMinY(r))
-                                         toPoint:NSMakePoint(NSMinX(r), NSMinY(r) + 6)
-                                          radius:6];
-        [border lineToPoint:NSMakePoint(NSMinX(r), NSMaxY(r) - 6)];
-        [border appendBezierPathWithArcFromPoint:NSMakePoint(NSMinX(r), NSMaxY(r))
-                                         toPoint:NSMakePoint(NSMinX(r) + 6, NSMaxY(r))
-                                          radius:6];
-        [border lineToPoint:NSMakePoint(NSMaxX(r) - 6, NSMaxY(r))];
-        [border appendBezierPathWithArcFromPoint:NSMakePoint(NSMaxX(r), NSMaxY(r))
-                                         toPoint:NSMakePoint(NSMaxX(r), NSMaxY(r) - 6)
-                                          radius:6];
-        [border lineToPoint:NSMakePoint(NSMaxX(r), NSMinY(self.bounds))];
-    }
-    [[NSColor.whiteColor colorWithAlphaComponent:dark ? .10 : .62] setStroke];
-    border.lineWidth = 1;
-    [border stroke];
-    if (!self.joinsAbove) {
-        [NSGraphicsContext saveGraphicsState];
-        [fill addClip];
-        [[NSColor.whiteColor colorWithAlphaComponent:dark ? .06 : .9] setFill];
-        NSRectFillUsingOperation(NSMakeRect(0, self.bounds.size.height - 1.5, self.bounds.size.width, 1),
-                                 NSCompositingOperationSourceOver);
-        [NSGraphicsContext restoreGraphicsState];
-    }
 }
 @end
 static const CGFloat ToolbarShadowMargin = 20;
@@ -223,15 +173,13 @@ static NSButton *Icon(NSString *symbol, NSString *help, id target, SEL action, N
     b.focusRingType = NSFocusRingTypeNone;
     return b;
 }
-@interface PanelChrome : NSView
+@interface WindowSurface : NSView
 @end
-@implementation PanelChrome
+@implementation WindowSurface
 - (void)drawRect:(NSRect)dirty {
-    [NSColor.controlBackgroundColor setFill];
+    [PLPlotGray(PLPlotPalette(PLPlotIsDark(self.effectiveAppearance)).background, 1) setFill];
     NSRectFill(self.bounds);
-    DrawHeader(NSMakeRect(0, self.bounds.size.height - 28, self.bounds.size.width, 28), YES);
-    [NSColor.separatorColor setFill];
-    NSFrameRect(self.bounds);
+    DrawHeader(NSMakeRect(0, self.bounds.size.height - 28, self.bounds.size.width, 28));
 }
 @end
 @interface SquarePanel : NSPanel
@@ -259,8 +207,8 @@ static NSPanel *MakePanel(NSString *title, NSSize size) {
     panel.releasedWhenClosed = NO;
     panel.opaque = YES;
     panel.hasShadow = YES;
-    panel.backgroundColor = NSColor.controlBackgroundColor;
-    panel.contentView = [[PanelChrome alloc] initWithFrame:panel.contentView.bounds];
+    panel.backgroundColor = PLPlotGray(PLPlotPalette(PLPlotIsDark(NSApp.effectiveAppearance)).background, 1);
+    panel.contentView = [[WindowSurface alloc] initWithFrame:panel.contentView.bounds];
     NSButton *close =
         Icon(@"close", @"Close Window", panel, @selector(close), NSMakeRect(7, size.height + 5, 18, 18));
     close.autoresizingMask = NSViewMinYMargin;
@@ -282,12 +230,6 @@ static NSTextField *Label(NSString *text, NSRect frame) {
     v.font = [NSFont systemFontOfSize:11];
     v.lineBreakMode = NSLineBreakByTruncatingMiddle;
     v.toolTip = text;
-    return v;
-}
-static NSTextField *Input(NSString *text, NSRect frame) {
-    NSTextField *v = [[NSTextField alloc] initWithFrame:frame];
-    v.stringValue = text ?: @"";
-    v.font = [NSFont systemFontOfSize:11];
     return v;
 }
 static NSValue *Box(Bounds b) {
@@ -476,7 +418,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     return NO;
 }
 @end
-@interface PlotRoot : NSView
+@interface PlotRoot : WindowSurface
 @property(nonatomic, weak) PlotController *controller;
 @end
 @interface YAxisSelect : NSPopUpButton
@@ -506,6 +448,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
 @property(nonatomic) CGFloat yColumnX;
 @property(nonatomic) NSMutableDictionary<NSString *, NSButton *> *tools;
 @property(nonatomic) NSWindowController *settings;
+@property(nonatomic) NSButton *editorButton, *editorClear;
 @property(nonatomic) dispatch_queue_t loader;
 @property(nonatomic) NSArray<NSString *> *initialPaths;
 - (void)syncFocus;
@@ -530,12 +473,9 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
 @property(nonatomic) NSUInteger selected, activeY;
 @property(nonatomic) NSString *x;
 @property(nonatomic) NSArray<NSString *> *ys;
-@property(nonatomic) NSArray<NSDictionary *> *rules;
 @property(nonatomic) BOOL points, pan, outliers;
 @property(nonatomic) NSMutableArray<NSArray<NSValue *> *> *history;
 @property(nonatomic) NSInteger historyIndex;
-@property(nonatomic) NSPanel *filterPanel;
-@property(nonatomic) NSMutableArray<NSDictionary *> *filterFields;
 - (instancetype)initWithApp:(PlotApp *)app group:(PLGroup *)group;
 - (void)layout;
 - (void)updateHeader;
@@ -555,10 +495,8 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     return YES;
 }
 - (void)drawRect:(NSRect)dirty {
+    [super drawRect:dirty];
     PlotPalette palette = PLPlotPalette(PLPlotIsDark(self.effectiveAppearance));
-    [PLPlotGray(palette.background, 1) setFill];
-    NSRectFill(self.bounds);
-    DrawHeader(NSMakeRect(0, self.bounds.size.height - 28, self.bounds.size.width, 28), NO);
 
     [PLPlotGray(palette.axis, 1) setStroke];
     NSBezierPath *grip = [NSBezierPath bezierPath];
@@ -605,7 +543,6 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         return nil;
     self.app = app;
     self.group = group;
-    self.rules = @[];
     self.charts = [NSMutableArray new];
     self.history = [NSMutableArray new];
     self.historyIndex = -1;
@@ -632,7 +569,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
             [controller cycle:[command hasSuffix:@"-x"] backwards:[command hasPrefix:@"previous"]];
         [controller.app updateToolbar];
     };
-    self.window.title = @"Plot";
+    self.window.title = @"";
     self.window.minSize = NSMakeSize(240, 170);
     self.window.opaque = YES;
     self.window.backgroundColor =
@@ -642,11 +579,11 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     self.root.controller = self;
     self.window.contentView = self.root;
     [self.root addSubview:Icon(@"close", @"Close Window (⌘W)", self, @selector(close:), NSZeroRect)];
-    [self.root addSubview:Icon(@"minimize", @"Minimize (⌘M)", self, @selector(minimize:), NSZeroRect)];
+    [self.root addSubview:Icon(@"minimize", @"Minimize", self, @selector(minimize:), NSZeroRect)];
     self.pin = Icon(@"pin", @"Always on Top (⌥⌘T)", self, @selector(togglePin:), NSZeroRect);
     self.pin.buttonType = NSButtonTypeToggle;
     [self.root addSubview:self.pin];
-    self.title = Label(@"Plot", NSZeroRect);
+    self.title = Label(@"", NSZeroRect);
     self.title.font = [NSFont systemFontOfSize:12];
     self.title.lineBreakMode = NSLineBreakByTruncatingTail;
     [self.root addSubview:self.title];
@@ -656,13 +593,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     self.positionLabel.cell.usesSingleLineMode = YES;
     self.positionLabel.textColor = NSColor.secondaryLabelColor;
     [self.root addSubview:self.positionLabel];
-    if (!group) {
-        NSButton *open =
-            Icon(@"open", @"Open files (⌘O)", app, @selector(action:), NSMakeRect(194, 139, 32, 32));
-        open.identifier = @"open";
-        open.autoresizingMask = NSViewMinXMargin | NSViewMaxXMargin | NSViewMinYMargin | NSViewMaxYMargin;
-        [self.root addSubview:open];
-    } else
+    if (group)
         [self rebuild];
     [self layout];
     [self updateHeader];
@@ -724,7 +655,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
                      : d.name;
 }
 - (void)updateHeader {
-    NSString *text = self.group ? [self displayName:self.selected] : @"Plot";
+    NSString *text = self.group ? [self displayName:self.selected] : @"";
     self.positionLabel.stringValue =
         self.group.items.count > 1
             ? [NSString stringWithFormat:@"%lu / %lu", self.selected + 1, self.group.items.count]
@@ -784,7 +715,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     [self.charts removeAllObjects];
     NSMutableArray<NSIndexSet *> *rowSets = [NSMutableArray new];
     for (PLDataset *d in self.group.items) {
-        NSIndexSet *rows = PLFilteredRows(d, self.rules);
+        NSIndexSet *rows = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, d.rowCount)];
         if (self.outliers) {
             NSMutableArray *ys = [NSMutableArray new];
             for (NSString *y in self.ys)
@@ -902,108 +833,6 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     [self.history removeAllObjects];
     self.historyIndex = -1;
     [self record];
-}
-- (NSPanel *)panel:(NSString *)title size:(NSSize)size {
-    NSPanel *panel = MakePanel(title, size);
-    panel.delegate = self;
-    [panel setFrameTopLeftPoint:NSMakePoint(NSMaxX(self.window.frame) + 8, NSMaxY(self.window.frame))];
-    return panel;
-}
-- (void)showFilter {
-    if (self.filterPanel) {
-        [self.filterPanel makeKeyAndOrderFront:nil];
-        return;
-    }
-    self.filterPanel = [self panel:@"Filter" size:NSMakeSize(400, 330)];
-    NSView *v = self.filterPanel.contentView;
-    self.filterFields = [NSMutableArray new];
-    NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(8, 48, 384, 274)];
-    scroll.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-    scroll.hasVerticalScroller = YES;
-    NSView *doc =
-        [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 365, MAX(274, self.group.columns.count * 30))];
-    scroll.documentView = doc;
-    [v addSubview:scroll];
-    for (NSUInteger i = 0; i < self.group.columns.count; i++) {
-        CGFloat y = doc.frame.size.height - (i + 1) * 30;
-        NSString *column = self.group.columns[i];
-        NSTextField *lo = Input(@"", NSMakeRect(210, y, 70, 24)),
-                    *hi = Input(@"", NSMakeRect(285, y, 70, 24));
-        lo.placeholderString = @"min";
-        hi.placeholderString = @"max";
-        lo.accessibilityLabel = [column stringByAppendingString:@" minimum"];
-        hi.accessibilityLabel = [column stringByAppendingString:@" maximum"];
-        for (NSDictionary *rule in self.rules)
-            if ([rule[@"column"] isEqual:column]) {
-                lo.stringValue = rule[@"min"] ? [rule[@"min"] stringValue] : @"";
-                hi.stringValue = rule[@"max"] ? [rule[@"max"] stringValue] : @"";
-            }
-        [doc addSubview:Label(column, NSMakeRect(2, y + 4, 200, 20))];
-        [doc addSubview:lo];
-        [doc addSubview:hi];
-        [self.filterFields addObject:@{@"column" : column, @"min" : lo, @"max" : hi}];
-    }
-    [v addSubview:Icon(@"apply", @"Apply Filter", self, @selector(applyFilter:), NSMakeRect(8, 10, 28, 28))];
-    [v addSubview:Icon(@"home", @"Reset Filter", self, @selector(resetFilter:), NSMakeRect(44, 10, 28, 28))];
-    [v addSubview:Icon(@"save-image", @"Save Filtered CSV", self, @selector(saveCSV:),
-                       NSMakeRect(362, 10, 28, 28))];
-    [self.window addChildWindow:self.filterPanel ordered:NSWindowAbove];
-    [self.filterPanel makeKeyAndOrderFront:nil];
-}
-- (void)applyFilter:(id)sender {
-    @try {
-        NSMutableArray *rules = [NSMutableArray new];
-        for (NSDictionary *field in self.filterFields) {
-            NSTextField *lo = field[@"min"], *hi = field[@"max"];
-            if (!lo.stringValue.length && !hi.stringValue.length)
-                continue;
-            NSMutableDictionary *rule = [@{@"column" : field[@"column"]} mutableCopy];
-            for (NSString *key in @[ @"min", @"max" ]) {
-                NSTextField *input = field[key];
-                if (!input.stringValue.length)
-                    continue;
-                NSScanner *scan = [NSScanner scannerWithString:input.stringValue];
-                double number;
-                if (![scan scanDouble:&number] || !scan.isAtEnd || !isfinite(number))
-                    @throw [NSException exceptionWithName:@"Filter"
-                                                   reason:@"Filter limits must be finite numbers."
-                                                 userInfo:nil];
-                rule[key] = @(number);
-            }
-            if (rule[@"min"] && rule[@"max"] && [rule[@"min"] doubleValue] > [rule[@"max"] doubleValue])
-                @throw [NSException exceptionWithName:@"Filter"
-                                               reason:@"Minimum must not exceed maximum."
-                                             userInfo:nil];
-            [rules addObject:rule];
-        }
-        self.rules = rules;
-        [self rebuild];
-    } @catch (NSException *e) {
-        Alert(@"Invalid filter", e.reason);
-    }
-}
-- (void)resetFilter:(id)sender {
-    for (NSDictionary *f in self.filterFields) {
-        [f[@"min"] setStringValue:@""];
-        [f[@"max"] setStringValue:@""];
-    }
-    self.rules = @[];
-    [self rebuild];
-}
-- (void)saveCSV:(id)sender {
-    NSSavePanel *panel = NSSavePanel.savePanel;
-    panel.allowedContentTypes = @[ [UTType typeWithFilenameExtension:@"csv"] ];
-    panel.nameFieldStringValue =
-        [NSString stringWithFormat:@"%@-filtered.csv",
-                                   self.group.items[self.selected].name.stringByDeletingPathExtension];
-    [panel beginSheetModalForWindow:self.filterPanel
-                  completionHandler:^(NSModalResponse result) {
-                      if (result != NSModalResponseOK)
-                          return;
-                      NSError *error;
-                      if (!PLWriteCSV(self.group, self.rules, panel.URL, &error))
-                          Alert(@"Export failed", error.localizedDescription);
-                  }];
 }
 - (void)setYColumns:(NSArray<NSString *> *)columns keeping:(NSArray<NSNumber *> *)indexes {
     if (!columns.count || !self.group)
@@ -1176,15 +1005,17 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
             activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:selected.path] ]];
     else if ([action isEqual:@"editor"] && selected.path.length) {
         NSString *editor = [NSUserDefaults.standardUserDefaults stringForKey:@"editor"];
-        NSTask *task = [NSTask new];
-        task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/open"];
-        task.arguments = editor.length ? @[ @"-a", editor, selected.path ] : @[ @"-t", selected.path ];
-        NSError *error;
-        if (![task launchAndReturnError:&error])
-            Alert(@"Cannot open editor", error.localizedDescription);
-    } else if ([action isEqual:@"filter"])
-        [self showFilter];
-    else if ([action isEqual:@"save-image"])
+        if (!editor.length)
+            [NSWorkspace.sharedWorkspace openURL:[NSURL fileURLWithPath:selected.path]];
+        else {
+            NSTask *task = [NSTask new];
+            task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/open"];
+            task.arguments = @[ @"-a", editor, selected.path ];
+            NSError *error;
+            if (![task launchAndReturnError:&error])
+                Alert(@"Cannot open editor", error.localizedDescription);
+        }
+    } else if ([action isEqual:@"save-image"])
         [self saveImage];
     else if ([action isEqual:@"home"]) {
         double min = INFINITY, max = -INFINITY;
@@ -1231,22 +1062,6 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         self.pan = [action isEqual:@"pan"];
         for (PLChart *c in self.charts)
             c.pan = self.pan;
-    } else if ([action isEqual:@"duplicate"]) {
-        PlotController *copy = [self.app newPlot:self.group];
-        copy.x = self.x;
-        copy.ys = self.ys;
-        copy.activeY = self.activeY;
-        copy.rules = self.rules;
-        copy.points = self.points;
-        copy.pan = self.pan;
-        copy.outliers = self.outliers;
-        copy.selected = self.selected;
-        [copy rebuild];
-        [copy applyRanges:[self ranges]];
-        [copy.history removeAllObjects];
-        copy.historyIndex = -1;
-        [copy record];
-        [copy.window setFrame:NSOffsetRect(self.window.frame, 28, -28) display:YES];
     }
     [self.app updateToolbar];
 }
@@ -1284,23 +1099,8 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     }
 }
 - (void)windowWillClose:(NSNotification *)n {
-    if (n.object == self.filterPanel) {
-        [self.window removeChildWindow:self.filterPanel];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if ([self.app.controllers containsObject:self] && self.window.visible &&
-                !self.window.miniaturized && !NSApp.keyWindow)
-                [self.window makeKeyAndOrderFront:nil];
-        });
-        self.filterPanel = nil;
-        self.filterFields = nil;
-        self.rules = @[];
-        [self rebuild];
-        return;
-    }
     if (n.object != self.window)
         return;
-    self.filterPanel.delegate = nil;
-    [self.filterPanel close];
     if (self.app.target == self) {
         [self.window removeChildWindow:self.app.toolbar];
         self.app.target = nil;
@@ -1338,7 +1138,6 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         [c.root setNeedsDisplay:YES];
         for (NSView *view in c.root.subviews)
             view.needsDisplay = YES;
-        c.filterPanel.contentView.needsDisplay = YES;
     }
     self.toolbar.contentView.needsDisplay = YES;
     self.yStack.contentView.needsDisplay = YES;
@@ -1357,8 +1156,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
     return item;
 }
 - (void)makeMenus {
-    NSEventModifierFlags cmd = NSEventModifierFlagCommand, alt = cmd | NSEventModifierFlagOption,
-                         shift = cmd | NSEventModifierFlagShift;
+    NSEventModifierFlags cmd = NSEventModifierFlagCommand, alt = cmd | NSEventModifierFlagOption;
     NSArray *definitions = @[
         @[
             @"Plot", @[ @"Settings…", @"settings", @",", @(cmd) ], @[ @"Hide Plot", @"hide", @"h", @(cmd) ],
@@ -1366,20 +1164,18 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         ],
         @[
             @"File", @[ @"New Window", @"new", @"n", @(cmd) ], @[ @"Open…", @"open", @"o", @(cmd) ],
-            @[ @"Duplicate Window", @"duplicate", @"d", @(shift) ],
             @[ @"Reveal in Finder", @"reveal", @"r", @(alt) ],
             @[ @"Open in Editor", @"editor", @"e", @(cmd) ],
             @[ @"Copy Absolute Path", @"copy-path", @"c", @(alt) ],
             @[ @"Save Image to Downloads", @"save-image", @"s", @(cmd) ]
         ],
         @[
-            @"Edit", @[ @"Undo", @"undo-view", @"z", @(cmd) ], @[ @"Redo", @"redo-view", @"z", @(shift) ],
+            @"Edit", @[ @"Undo", @"undo-view", @"", @0 ], @[ @"Redo", @"redo-view", @"", @0 ],
             @[ @"Cut", @"cut:", @"x", @(cmd) ], @[ @"Copy", @"copy", @"c", @(cmd) ],
             @[ @"Paste", @"paste:", @"v", @(cmd) ], @[ @"Select All", @"selectAll:", @"a", @(cmd) ]
         ],
         @[
-            @"Tools", @[ @"Filter…", @"filter", @"f", @(alt) ],
-            @[ @"Exclude Outliers", @"outliers", @"r", @(alt | NSEventModifierFlagShift) ],
+            @"Tools", @[ @"Exclude Outliers", @"outliers", @"", @0 ],
             @[ @"Reset Axes", @"reset-axes", @"0", @(cmd) ], @[ @"Next X Column", @"next-x", @"x", @0 ],
             @[ @"Previous X Column", @"previous-x", @"x", @(NSEventModifierFlagShift) ],
             @[ @"Next Y Column", @"next-y", @"y", @0 ],
@@ -1387,10 +1183,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         ],
         @[
             @"Window", @[ @"Close Window", @"close", @"w", @(cmd) ],
-            @[ @"Minimize", @"minimize", @"m", @(cmd) ], @[ @"Always on Top", @"pin", @"t", @(alt) ],
-            @[ @"Next Window", @"next", @"`", @(cmd) ], @[ @"Previous Window", @"previous", @"`", @(shift) ],
-            @[ @"Tile Windows", @"arrange", @"a", @(alt) ],
-            @[ @"Cascade Windows", @"cascade", @"a", @(alt | NSEventModifierFlagShift) ]
+            @[ @"Always on Top", @"pin", @"t", @(alt) ], @[ @"Tile Windows", @"arrange", @"a", @(alt) ]
         ]
     ];
     NSMenu *bar = [NSMenu new];
@@ -1434,7 +1227,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         @[ @"Open", @"open", @"Open files (⌘O)" ], @[ @"⌂", @"home", @"Fit all data" ],
         @[ @"‹", @"undo-view", @"Previous view" ], @[ @"›", @"redo-view", @"Next view" ],
         @[ @"Pan", @"pan", @"Pan" ], @[ @"Zoom", @"zoom", @"Box zoom" ], @[ @"Line", @"line", @"Lines" ],
-        @[ @"Dots", @"points", @"Points" ], @[ @"Clean", @"outliers", @"Exclude outliers (⇧⌥⌘R)" ]
+        @[ @"Dots", @"points", @"Points" ], @[ @"Clean", @"outliers", @"Exclude outliers" ]
     ];
     CGFloat x = 3;
     for (NSArray *entry in commands) {
@@ -1713,11 +1506,11 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
 }
 - (void)showSettings {
     if (!self.settings) {
-        NSWindow *window = MakePanel(@"Settings", NSMakeSize(360, 130));
+        NSWindow *window = MakePanel(@"Settings", NSMakeSize(360, 110));
         self.settings = [[NSWindowController alloc] initWithWindow:window];
         NSView *v = window.contentView;
-        [v addSubview:Label(@"Theme", NSMakeRect(16, 88, 85, 16))];
-        NSPopUpButton *theme = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(110, 82, 230, 28)
+        [v addSubview:Label(@"Theme", NSMakeRect(16, 68, 85, 16))];
+        NSPopUpButton *theme = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(110, 62, 230, 28)
                                                           pullsDown:NO];
         [theme addItemsWithTitles:@[ @"System", @"Light", @"Dark" ]];
         NSString *pref = [NSUserDefaults.standardUserDefaults stringForKey:@"theme"] ?: @"system";
@@ -1726,17 +1519,19 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         theme.target = self;
         theme.action = @selector(settingChanged:);
         [v addSubview:theme];
-        [v addSubview:Label(@"Editor", NSMakeRect(16, 45, 85, 16))];
-        NSTextField *editor =
-            Input([NSUserDefaults.standardUserDefaults stringForKey:@"editor"], NSMakeRect(110, 40, 230, 24));
-        editor.placeholderString = @"Default text editor";
-        editor.target = self;
-        editor.action = @selector(settingChanged:);
-        editor.identifier = @"editor";
-        [v addSubview:editor];
-        [v addSubview:Label(@"Enter an app name; press Return to save.", NSMakeRect(110, 13, 240, 20))];
+        [v addSubview:Label(@"Editor", NSMakeRect(16, 25, 85, 16))];
+        self.editorButton = [NSButton buttonWithTitle:@"Choose…" target:self action:@selector(chooseEditor:)];
+        self.editorButton.frame = NSMakeRect(110, 19, 198, 28);
+        self.editorButton.identifier = @"editor";
+        self.editorButton.lineBreakMode = NSLineBreakByTruncatingMiddle;
+        self.editorButton.accessibilityLabel = @"Choose editor application";
+        [v addSubview:self.editorButton];
+        self.editorClear = Icon(@"remove", @"Use default application", self, @selector(clearEditor:),
+                                NSMakeRect(314, 20, 26, 26));
+        [v addSubview:self.editorClear];
         [window center];
     }
+    [self updateEditorChoice];
     [self.settings showWindow:nil];
     [self.settings.window makeKeyAndOrderFront:nil];
     [self syncFocus];
@@ -1747,15 +1542,44 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
             setObject:@[ @"system", @"light", @"dark" ][[sender indexOfSelectedItem]]
                forKey:@"theme"];
         [self applyAppearance];
-    } else
-        [NSUserDefaults.standardUserDefaults setObject:[sender stringValue] forKey:@"editor"];
+    }
+}
+- (void)updateEditorChoice {
+    NSString *editor = [NSUserDefaults.standardUserDefaults stringForKey:@"editor"];
+    self.editorButton.title =
+        editor.length ? [NSFileManager.defaultManager displayNameAtPath:editor].stringByDeletingPathExtension
+                      : @"Default application…";
+    self.editorButton.toolTip = editor.length ? editor : @"Choose an application";
+    self.editorClear.enabled = editor.length > 0;
+}
+- (void)chooseEditor:(id)sender {
+    NSOpenPanel *panel = NSOpenPanel.openPanel;
+    panel.title = @"Choose Editor";
+    panel.prompt = @"Choose";
+    panel.allowedContentTypes = @[ UTTypeApplicationBundle ];
+    panel.allowsMultipleSelection = NO;
+    panel.canChooseFiles = YES;
+    panel.canChooseDirectories = NO;
+    panel.treatsFilePackagesAsDirectories = NO;
+    panel.directoryURL = [NSURL fileURLWithPath:@"/Applications" isDirectory:YES];
+    [panel beginSheetModalForWindow:self.settings.window
+                  completionHandler:^(NSModalResponse result) {
+                      if (result != NSModalResponseOK)
+                          return;
+                      [NSUserDefaults.standardUserDefaults setObject:panel.URL.path forKey:@"editor"];
+                      [self updateEditorChoice];
+                  }];
+}
+- (void)clearEditor:(id)sender {
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:@"editor"];
+    [self updateEditorChoice];
 }
 - (void)action:(id)sender {
     NSString *action =
         [sender isKindOfClass:NSMenuItem.class] ? [sender representedObject] : [sender identifier];
     PlotController *c = self.target;
     for (PlotController *owner in self.controllers)
-        if (NSApp.keyWindow == owner.window || NSApp.keyWindow == owner.filterPanel)
+        if (NSApp.keyWindow == owner.window)
             c = owner;
     NSResponder *responder = NSApp.keyWindow.firstResponder;
     if ([responder isKindOfClass:NSTextView.class] &&
@@ -1827,36 +1651,21 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         [c.history removeAllObjects];
         c.historyIndex = -1;
         [c record];
-    } else if ([action isEqual:@"next"] || [action isEqual:@"previous"]) {
-        if (!self.controllers.count)
-            return;
-        NSUInteger i = [self.controllers indexOfObject:c];
-        if (i == NSNotFound)
-            i = 0;
-        i = (i + self.controllers.count + ([action isEqual:@"next"] ? 1 : -1)) % self.controllers.count;
-        [self.controllers[i].window makeKeyAndOrderFront:nil];
-    } else if ([action isEqual:@"arrange"] || [action isEqual:@"cascade"]) {
+    } else if ([action isEqual:@"arrange"]) {
         NSRect area = (c.window.screen ?: NSScreen.mainScreen).visibleFrame;
         CGFloat x = area.origin.x + 12, y = NSMaxY(area) - 12, row = 0;
         for (PlotController *p in self.controllers) {
             NSSize size = p.window.frame.size;
-            if ([action isEqual:@"arrange"] && x + size.width > NSMaxX(area) && x > area.origin.x + 12) {
+            if (x + size.width > NSMaxX(area) && x > area.origin.x + 12) {
                 x = area.origin.x + 12;
                 y -= row + 12;
                 row = 0;
             }
             [p.window setFrameTopLeftPoint:NSMakePoint(x, y)];
-            if ([action isEqual:@"cascade"]) {
-                x += 28;
-                y -= 28;
-            } else {
-                x += size.width + 12;
-                row = MAX(row, size.height);
-            }
+            x += size.width + 12;
+            row = MAX(row, size.height);
         }
-    } else if ([action isEqual:@"save-image"] && NSApp.keyWindow == c.filterPanel)
-        [c saveCSV:nil];
-    else
+    } else
         [c perform:action];
 }
 - (BOOL)validateMenuItem:(NSMenuItem *)item {
@@ -1883,7 +1692,7 @@ static NSCursor *PlotResizeCursor(PlotResizeEdge edges) {
         item.state = c.window.level == NSFloatingWindowLevel;
     if ([a isEqual:@"outliers"])
         item.state = c.outliers;
-    return loaded || [@[ @"pin", @"next", @"previous", @"arrange", @"cascade" ] containsObject:a];
+    return loaded || [@[ @"pin", @"arrange" ] containsObject:a];
 }
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     @try {

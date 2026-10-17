@@ -17,12 +17,6 @@ A plotting app for macOS.
 
 ---
 
-## Usage
-
-Open CSV, DAT, RAS or SPEC TXT files. Compatible files opened together appear in one window.
-
-Use the arrow keys to change the highlighted dataset. The toolbar appears for the focused window. Use `+` beside Y to add a plot.
-
 ## Setup
 
 Requires Xcode Command Line Tools.
@@ -31,32 +25,46 @@ Requires Xcode Command Line Tools.
 ./build
 ```
 
-Installs to `/Applications/Plot.app` and launches it. Run `./build` again to update.
+Installs to `/Applications/Plot.app` and launches it.
 
 ## Shortcuts
 
 <details>
-<summary>All shortcuts</summary>
+<summary>file</summary>
 
-- Copy selected file — `⌘C`
-- Close window — `⌘W`
-- Always on top — `⌥⌘T`
-- Select dataset — arrow keys
-- Open — `⌘O`
-- New window — `⌘N`
-- Duplicate window — `⇧⌘D`
-- Reveal in Finder — `⌥⌘R`
-- Open in editor (configurable) — `⌘E`
-- Copy absolute path — `⌥⌘C`
-- Save panel image (to Downloads) — `⌘S`
-- Reset to default X/Y axes — `⌘0`
-- Next / previous X-axis column — `X` / `⇧X`
-- Next / previous Y-axis column — `Y` / `⇧Y` (last clicked plot; its Y selector is highlighted)
-- Open the filter window — `⌥⌘F`
-- Exclude outliers — `⇧⌥⌘R`
-- Settings — `⌘,`
-- Next / previous window — `` ⌘` `` / `` ⇧⌘` ``
-- Tile windows — `⌥⌘A`
-- Minimize — `⌘M`
+| Action | Key | Notes |
+|---|---|---|
+| Open | `⌘O` | |
+| Copy selected file | `⌘C` | |
+| Copy absolute path | `⌥⌘C` | |
+| Reveal in Finder | `⌥⌘R` | |
+| Open in editor | `⌘E` | Configurable in Settings; empty uses the default app |
+| Save panel image | `⌘S` | Saved to Downloads |
+
+</details>
+
+<details>
+<summary>plot</summary>
+
+| Action | Key | Notes |
+|---|---|---|
+| Select dataset | Arrow keys | |
+| Reset to default X/Y axes | `⌘0` | |
+| Next / previous X-axis column | `X` / `⇧X` | |
+| Next / previous Y-axis column | `Y` / `⇧Y` | Last clicked plot |
+| Exclude outliers | | |
+
+</details>
+
+<details>
+<summary>window</summary>
+
+| Action | Key | Notes |
+|---|---|---|
+| New window | `⌘N` | |
+| Close window | `⌘W` | |
+| Always on top | `⌥⌘T` | |
+| Tile windows | `⌥⌘A` | |
+| Settings | `⌘,` | |
 
 </details>

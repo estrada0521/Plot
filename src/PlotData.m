@@ -342,47 +342,6 @@ NSArray<PLGroup *> *PLReadGroups(NSArray<NSString *> *paths, NSMutableArray<NSSt
     }
     return groups;
 }
-NSIndexSet *PLFilteredRows(PLDataset *d, NSArray<NSDictionary *> *rules) {
-    if (!rules.count)
-        return [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, d.rowCount)];
-    typedef struct {
-        NSUInteger column;
-        double min, max;
-    } Rule;
-    NSMutableData *compiled = [NSMutableData dataWithLength:rules.count * sizeof(Rule)];
-    Rule *limits = compiled.mutableBytes;
-    NSUInteger count = 0;
-    for (NSDictionary *rule in rules) {
-        NSUInteger column = [d.columns indexOfObject:rule[@"column"]];
-        if (column == NSNotFound)
-            continue;
-        limits[count++] = (Rule){column, rule[@"min"] ? [rule[@"min"] doubleValue] : -INFINITY,
-                                 rule[@"max"] ? [rule[@"max"] doubleValue] : INFINITY};
-    }
-    const double *values = d.values.bytes;
-    NSUInteger stride = d.columns.count, n = d.rowCount, start = NSNotFound;
-    NSMutableIndexSet *rows = [NSMutableIndexSet new];
-    for (NSUInteger r = 0; r < n; r++) {
-        BOOL keep = YES;
-        for (NSUInteger i = 0; i < count; i++) {
-            double v = values[r * stride + limits[i].column];
-            if (!isfinite(v) || v < limits[i].min || v > limits[i].max) {
-                keep = NO;
-                break;
-            }
-        }
-        if (keep && start == NSNotFound)
-            start = r;
-        if (!keep && start != NSNotFound) {
-            [rows addIndexesInRange:NSMakeRange(start, r - start)];
-            start = NSNotFound;
-        }
-    }
-    if (start != NSNotFound)
-        [rows addIndexesInRange:NSMakeRange(start, n - start)];
-    return rows;
-}
-
 static int CompareDouble(const void *a, const void *b) {
     double x = *(const double *)a, y = *(const double *)b;
     return (x > y) - (x < y);
@@ -441,50 +400,4 @@ NSIndexSet *PLRemoveOutliers(PLDataset *d, NSIndexSet *rows, NSUInteger x, NSArr
             }
         }
     return result;
-}
-static NSString *Quote(NSString *s) {
-    return [NSString stringWithFormat:@"\"%@\"", [s stringByReplacingOccurrencesOfString:@"\""
-                                                                              withString:@"\"\""]];
-}
-BOOL PLWriteCSV(PLGroup *group, NSArray<NSDictionary *> *rules, NSURL *url, NSError **error) {
-    NSString *temp = [url.path.stringByDeletingLastPathComponent
-        stringByAppendingPathComponent:[@".plot-export-" stringByAppendingString:NSUUID.UUID.UUIDString]];
-    FILE *f = fopen(temp.fileSystemRepresentation, "wb");
-    if (!f) {
-        if (error)
-            *error = DataError(@"Cannot create export file");
-        return NO;
-    }
-    BOOL multiple = group.items.count > 1;
-    if (multiple)
-        fputs("Dataset,", f);
-    for (NSUInteger i = 0; i < group.columns.count; i++)
-        fprintf(f, "%s%s", i ? "," : "", Quote(group.columns[i]).UTF8String);
-    fputc('\n', f);
-    for (PLDataset *d in group.items) {
-        NSIndexSet *rows = PLFilteredRows(d, rules);
-        for (NSUInteger r = rows.firstIndex; r != NSNotFound; r = [rows indexGreaterThanIndex:r]) {
-            if (multiple)
-                fprintf(f, "%s,", Quote(d.name).UTF8String);
-            for (NSUInteger i = 0; i < group.columns.count; i++) {
-                if (i)
-                    fputc(',', f);
-                double v = [d valueAtRow:r column:[d.columns indexOfObject:group.columns[i]]];
-                if (isfinite(v))
-                    fprintf(f, "%.17g", v);
-            }
-            fputc('\n', f);
-        }
-    }
-    BOOL ok = !ferror(f);
-    if (fclose(f))
-        ok = NO;
-    if (ok && rename(temp.fileSystemRepresentation, url.path.fileSystemRepresentation))
-        ok = NO;
-    if (!ok) {
-        unlink(temp.fileSystemRepresentation);
-        if (error)
-            *error = DataError(@"Could not write CSV");
-    }
-    return ok;
 }
